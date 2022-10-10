@@ -45,7 +45,7 @@ func (q *UndoRedoQueue) AddAction(currentChangeGeneration uint64, action UndoRed
 		prevAction := q.actions[len(q.actions)-1].Action
 		if container, ok := prevAction.(*UndoRedoContainer); ok {
 			if action, ok := action.(UndoRedoActionContainer); ok {
-				action.addTo(container)
+				action.AddTo(container)
 				q.actions[len(q.actions)-1].ChangeGeneration = changeGeneration
 				commonAppend = false
 			}

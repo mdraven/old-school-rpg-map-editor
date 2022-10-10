@@ -18,7 +18,7 @@ type Location struct {
 	NoteId     string `json:"note_id,omitempty"` // id заметки для этой клетки
 }
 
-func (l *Location) isEmptyLocation() bool {
+func (l *Location) IsEmptyLocation() bool {
 	return l.Floor == 0 && l.RightWall == 0 && l.BottomWall == 0 && len(l.NoteId) == 0
 }
 
@@ -479,7 +479,7 @@ func (m *MapModel) setFloor(x, y int, layerIndex int32, value uint32) {
 		m.layers[layerIndex].locations[pos] = f
 	}
 
-	if f.isEmptyLocation() {
+	if f.IsEmptyLocation() {
 		delete(m.layers[layerIndex].locations, pos)
 	}
 }
@@ -557,7 +557,7 @@ func (m *MapModel) setWall(x, y int, layerIndex int32, isRight bool, value uint3
 		m.layers[layerIndex].locations[pos] = f
 	}
 
-	if f.isEmptyLocation() {
+	if f.IsEmptyLocation() {
 		delete(m.layers[layerIndex].locations, pos)
 	}
 }
@@ -625,7 +625,7 @@ func (m *MapModel) setNoteId(x, y int, layerIndex int32, value string) {
 		m.layers[layerIndex].locations[pos] = f
 	}
 
-	if f.isEmptyLocation() {
+	if f.IsEmptyLocation() {
 		delete(m.layers[layerIndex].locations, pos)
 	}
 }
@@ -650,7 +650,7 @@ func (m *MapModel) bounds(layerIndex int32) (leftTop, rightBottom utils.Int2) {
 	rightBottom = utils.NewInt2(math.MinInt32, math.MinInt32)
 
 	for k, v := range m.layers[layerIndex].locations {
-		if !v.isEmptyLocation() {
+		if !v.IsEmptyLocation() {
 			if k.X < leftTop.X {
 				leftTop.X = k.X
 			}

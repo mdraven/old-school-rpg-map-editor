@@ -8,8 +8,9 @@ Map editor for passing old school dungeon crawlers
 > Not ready for use yet.
 
 TODO:
+- [ ] Compass
 - [ ] Hotkeys
 - [ ] Search notes on map
-- [ ] Copy/paste
+- [X] Copy/paste
 
 

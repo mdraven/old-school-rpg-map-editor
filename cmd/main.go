@@ -9,6 +9,7 @@ import (
 	"log"
 	"old-school-rpg-map-editor/common"
 	"old-school-rpg-map-editor/configuration"
+	"old-school-rpg-map-editor/models/copy_model"
 	"old-school-rpg-map-editor/models/map_model"
 	"old-school-rpg-map-editor/models/maps_model"
 	"old-school-rpg-map-editor/models/mode_model"
@@ -208,6 +209,7 @@ func main() {
 	w.SetMaster()
 
 	mapsModel := maps_model.NewMapsModel(8, fnt)
+	copyModel := copy_model.NewCopyModel()
 
 	floorPaletteWidget := palette_widget.NewPaletteWidget(floorImage, imageConfig.FloorSize, imageConfig.FloorSize, 0)
 	wallPaletteWidget := palette_widget.NewPaletteWidget(wallImage, imageConfig.WallWidth, imageConfig.FloorSize, (imageConfig.FloorSize-imageConfig.WallWidth)/2)
@@ -342,7 +344,7 @@ func main() {
 	restoreContentAndToolsSettings(config, content, tools)
 	defer saveContentAndToolsSettings(configFile, config, content, tools)
 
-	toolbar := toolbar.NewToolbar(w, fnt, mapsModel, mapTabs, rotateLeftIcon, rotateRightIcon, setModeIcon, setModeSelectedIcon, selectModeIcon, selectModeSelectedIcon, moveModeIcon, moveModeSelectedIcon)
+	toolbar := toolbar.NewToolbar(w, fnt, mapsModel, mapTabs, copyModel, rotateLeftIcon, rotateRightIcon, setModeIcon, setModeSelectedIcon, selectModeIcon, selectModeSelectedIcon, moveModeIcon, moveModeSelectedIcon)
 
 	w.SetContent(container.NewBorder(toolbar, nil, nil, nil, content))
 

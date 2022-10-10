@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"old-school-rpg-map-editor/common"
 	"old-school-rpg-map-editor/common/load_save"
+	"old-school-rpg-map-editor/models/copy_model"
 	"old-school-rpg-map-editor/models/map_model"
 	"old-school-rpg-map-editor/models/maps_model"
 	"old-school-rpg-map-editor/models/mode_model"
@@ -43,12 +44,15 @@ type Toolbar struct {
 	redo        *toolbar_action.ToolbarAction
 	rotateLeft  *toolbar_action.ToolbarAction
 	rotateRight *toolbar_action.ToolbarAction
+	copy        *toolbar_action.ToolbarAction
+	cut         *toolbar_action.ToolbarAction
+	paste       *toolbar_action.ToolbarAction
 
 	currentMapId uuid.UUID
 	disconnect   utils.Signal0
 }
 
-func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.MapsModel, mapTabs *doc_tabs_widget.DocTabsWidget, rotateLeftIcon, rotateRightIcon, setModeIcon, setModeSelectedIcon, selectModeIcon, selectModeSelectedIcon, moveModeIcon, moveModeSelectedIcon fyne.Resource) *Toolbar {
+func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.MapsModel, mapTabs *doc_tabs_widget.DocTabsWidget, copyModel *copy_model.CopyModel, rotateLeftIcon, rotateRightIcon, setModeIcon, setModeSelectedIcon, selectModeIcon, selectModeSelectedIcon, moveModeIcon, moveModeSelectedIcon fyne.Resource) *Toolbar {
 	w := &Toolbar{
 		Toolbar:      widget.Toolbar{},
 		mapsModel:    mapsModel,
@@ -201,14 +205,54 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 		Redo(mapTabs, mapsModel)
 	})
 
+	w.cut = toolbar_action.NewToolbarAction(theme.ContentCutIcon(), func() {
+		mapElem := mapTabs.Selected()
+		copyResult := Copy(mapElem.Model, mapElem.RotateModel, mapElem.RotSelectModel, mapElem.RotMapModel)
+		copyModel.SetCopyResult(copyResult)
+		_, err := common.MakeAction(undo_redo.NewCutAction(copyResult), mapsModel, mapElem.MapId, false)
+		if err != nil {
+			// TODO
+			fmt.Println(err)
+			return
+		}
+	})
+	w.copy = toolbar_action.NewToolbarAction(theme.ContentCopyIcon(), func() {
+		mapElem := mapTabs.Selected()
+		copyModel.SetCopyResult(Copy(mapElem.Model, mapElem.RotateModel, mapElem.RotSelectModel, mapElem.RotMapModel))
+	})
+	w.paste = toolbar_action.NewToolbarAction(theme.ContentPasteIcon(), func() {
+		mapElem := mapTabs.Selected()
+		moveLayerIndex := mapElem.Model.LayerIndexByName("MOVE", true)
+		moveLayerId := mapElem.Model.LayerInfo(moveLayerIndex).Uuid
+
+		if copyModel.IsEmpty() {
+			return
+		}
+
+		_, err := common.MakeAction(undo_redo.NewMoveFromSelectModelAction(moveLayerId, mode_model.MoveMode), mapsModel, mapElem.MapId, false)
+		if err != nil {
+			// TODO
+			fmt.Println(err)
+			return
+		}
+
+		// TODO: вместо utils.NewInt2(0, 0) надо брать позицию из widget
+		_, err = common.MakeAction(undo_redo.NewPasteToMoveLayerAction(utils.NewInt2(0, 0), copyModel.CopyResult(), moveLayerId), mapsModel, mapElem.MapId, false)
+		if err != nil {
+			// TODO
+			fmt.Println(err)
+			return
+		}
+	})
+
 	w.Items = append(w.Items,
 		newFile,
 		openFile,
 		w.saveFile,
 		widget.NewToolbarSeparator(),
-		toolbar_action.NewToolbarAction(theme.ContentCutIcon(), func() {}),
-		toolbar_action.NewToolbarAction(theme.ContentCopyIcon(), func() {}),
-		toolbar_action.NewToolbarAction(theme.ContentPasteIcon(), func() {}),
+		w.cut,
+		w.copy,
+		w.paste,
 		widget.NewToolbarSeparator(),
 		w.undo,
 		w.redo,
@@ -247,6 +291,16 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 		}
 	})
 
+	copyModel.AddDataChangeListener(func() {
+		if copyModel.IsEmpty() {
+			w.paste.ToolbarObject().(*widget.Button).Disable()
+			w.cut.ToolbarObject().(*widget.Button).Disable()
+		} else {
+			w.paste.ToolbarObject().(*widget.Button).Enable()
+			w.cut.ToolbarObject().(*widget.Button).Enable()
+		}
+	})
+
 	w.ExtendBaseWidget(w)
 
 	return w
@@ -277,6 +331,9 @@ func (w *Toolbar) setMapElem(mapElem maps_model.MapElem) {
 		w.redo.ToolbarObject().(*widget.Button).Disable()
 		w.rotateLeft.ToolbarObject().(*widget.Button).Disable()
 		w.rotateRight.ToolbarObject().(*widget.Button).Disable()
+		w.copy.ToolbarObject().(*widget.Button).Disable()
+		w.cut.ToolbarObject().(*widget.Button).Disable()
+		w.paste.ToolbarObject().(*widget.Button).Disable()
 	} else {
 		w.setModeToolbarAction.SetModeModel(mapElem.ModeModel)
 		w.setModeToolbarAction.ToolbarObject().(*widget.Button).Enable()
@@ -289,8 +346,10 @@ func (w *Toolbar) setMapElem(mapElem maps_model.MapElem) {
 
 			if leftTop != rightBottom {
 				w.moveModeToolbarAction.ToolbarObject().(*widget.Button).Enable()
+				w.copy.ToolbarObject().(*widget.Button).Enable()
 			} else {
 				w.moveModeToolbarAction.ToolbarObject().(*widget.Button).Disable()
+				w.copy.ToolbarObject().(*widget.Button).Disable()
 			}
 		}
 		w.moveModeToolbarAction.SetModeModel(mapElem.ModeModel)
@@ -378,3 +437,77 @@ func SetMode(mapsModel *maps_model.MapsModel, mapId uuid.UUID, mode mode_model.M
 		}
 	}
 }
+
+func Copy(m *map_model.MapModel, r *rotate_model.RotateModel, rS *rot_select_model.RotSelectModel, rM *rot_map_model.RotMapModel) copy_model.CopyResult {
+	result := copy_model.CopyResult{}
+	result.Layers = make(map[uuid.UUID]copy_model.CopyResultLocations)
+
+	leftTop, rightBottom := rS.Bounds()
+
+	for y := leftTop.Y; y < rightBottom.Y; y++ {
+		for x := leftTop.X; x < rightBottom.X; x++ {
+			selected := rS.At(x, y)
+			tX, tY := r.TransformFromRot(x, y)
+
+			setLocation := func(layerIndex int32, f func(l *map_model.Location)) {
+				layerId := m.Layer(layerIndex).Uuid
+				layer := result.Layers[layerId]
+
+				var location map_model.Location
+				if layer.Locations != nil {
+					if l, exists := layer.Locations[utils.NewInt2(tX, tY)]; exists {
+						location = l
+					}
+				}
+
+				f(&location)
+
+				if layer.Locations == nil {
+					layer.Locations = make(map[utils.Int2]map_model.Location)
+				}
+
+				layer.Locations[utils.NewInt2(tX, tY)] = location
+				result.Layers[layerId] = layer
+			}
+
+			if layerIndex := m.LayerIndexById(selected.Floor); layerIndex != -1 {
+				setLocation(layerIndex, func(l *map_model.Location) {
+					l.Floor = rM.Floor(x, y, layerIndex)
+				})
+			}
+			if layerIndex := m.LayerIndexById(selected.RightWall); layerIndex != -1 {
+				setLocation(layerIndex, func(l *map_model.Location) {
+					l.RightWall = rM.Wall(x, y, layerIndex, true)
+				})
+			}
+			if layerIndex := m.LayerIndexById(selected.BottomWall); layerIndex != -1 {
+				setLocation(layerIndex, func(l *map_model.Location) {
+					l.BottomWall = rM.Wall(x, y, layerIndex, false)
+				})
+			}
+		}
+	}
+
+	return result
+}
+
+/*
+func Paste(pos utils.Int2, copyResult undo_redo.CopyResult, mapsModel *maps_model.MapsModel, mapId uuid.UUID) {
+	mapElem := mapsModel.GetById(mapId)
+	//moveLayerIndex := mapElem.Model.LayerIndexByName("MOVE", true)
+
+	_, err := common.MakeAction(undo_redo.NewPasteToMoveLayerAction(pos, copyResult), mapsModel, mapElem.MapId, false)
+	if err != nil {
+		// TODO
+		fmt.Println(err)
+		return
+	}
+
+	_, err = common.MakeAction(undo_redo.NewUnselectAllAction(), mapsModel, mapId, false)
+	if err != nil {
+		// TODO
+		fmt.Println(err)
+		return
+	}
+}
+*/
