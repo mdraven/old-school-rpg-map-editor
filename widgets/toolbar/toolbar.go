@@ -490,24 +490,3 @@ func Copy(m *map_model.MapModel, r *rotate_model.RotateModel, rS *rot_select_mod
 
 	return result
 }
-
-/*
-func Paste(pos utils.Int2, copyResult undo_redo.CopyResult, mapsModel *maps_model.MapsModel, mapId uuid.UUID) {
-	mapElem := mapsModel.GetById(mapId)
-	//moveLayerIndex := mapElem.Model.LayerIndexByName("MOVE", true)
-
-	_, err := common.MakeAction(undo_redo.NewPasteToMoveLayerAction(pos, copyResult), mapsModel, mapElem.MapId, false)
-	if err != nil {
-		// TODO
-		fmt.Println(err)
-		return
-	}
-
-	_, err = common.MakeAction(undo_redo.NewUnselectAllAction(), mapsModel, mapId, false)
-	if err != nil {
-		// TODO
-		fmt.Println(err)
-		return
-	}
-}
-*/
