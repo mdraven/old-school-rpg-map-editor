@@ -761,24 +761,8 @@ func NewPasteToMoveLayerAction(pos utils.Int2, copyResult copy_model.CopyResult,
 
 func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 	if a.actions.Len() == 0 {
-		var leftTop utils.Int2
-		isEmpty := true // для проверки, что в copyResult что-то есть
-
-		for _, layer := range a.copyResult.Layers {
-			for pos, location := range layer.Locations {
-				if !location.IsEmptyLocation() {
-					if pos.X < leftTop.X {
-						leftTop.X = pos.X
-					}
-					if pos.Y < leftTop.Y {
-						leftTop.Y = pos.Y
-					}
-					isEmpty = false
-				}
-			}
-		}
-
-		if isEmpty {
+		leftTop, rightBottom := a.copyResult.Bounds()
+		if leftTop == rightBottom {
 			return
 		}
 
@@ -804,13 +788,13 @@ func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 		for layerId, layer := range a.copyResult.Layers {
 			for pos, location := range layer.Locations {
 
-				x, y := m.R.TransformToRot(pos.X, pos.Y)
+				pos.X, pos.Y = m.R.TransformToRot(pos.X, pos.Y)
 
-				x += leftTop.X
-				y += leftTop.Y
+				pos.X -= leftTop.X
+				pos.Y -= leftTop.Y
 
 				if location.Floor > 0 {
-					action := NewSetFloorAction(utils.NewInt2(x, y), a.moveLayerId, location.Floor)
+					action := NewSetFloorAction(pos, a.moveLayerId, location.Floor)
 					action.Redo(m)
 					action.AddTo(a.actions)
 
@@ -819,7 +803,7 @@ func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 					selected[pos] = s
 				}
 				if location.RightWall > 0 {
-					action := NewSetWallAction(utils.NewInt2(x, y), a.moveLayerId, true, location.RightWall)
+					action := NewSetWallAction(pos, a.moveLayerId, true, location.RightWall)
 					action.Redo(m)
 					action.AddTo(a.actions)
 
@@ -828,7 +812,7 @@ func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 					selected[pos] = s
 				}
 				if location.BottomWall > 0 {
-					action := NewSetWallAction(utils.NewInt2(x, y), a.moveLayerId, false, location.BottomWall)
+					action := NewSetWallAction(pos, a.moveLayerId, false, location.BottomWall)
 					action.Redo(m)
 					action.AddTo(a.actions)
 

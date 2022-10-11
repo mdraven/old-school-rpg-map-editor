@@ -236,8 +236,24 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 			return
 		}
 
-		// TODO: вместо utils.NewInt2(0, 0) надо брать позицию из widget
-		_, err = common.MakeAction(undo_redo.NewPasteToMoveLayerAction(utils.NewInt2(0, 0), copyModel.CopyResult(), moveLayerId), mapsModel, mapElem.MapId, false)
+		mapWidget := mapTabs.MapWidget()
+
+		copyResult := copyModel.CopyResult()
+
+		pastePos := utils.Int2{}
+		if mapWidget != nil {
+			pastePos = mapWidget.Center()
+
+			leftTop, rightBottom := copyResult.Bounds()
+			if leftTop != rightBottom {
+				centerX := (rightBottom.X - leftTop.X) / 2
+				centerY := (rightBottom.Y - leftTop.Y) / 2
+				pastePos.X -= centerX
+				pastePos.Y -= centerY
+			}
+		}
+
+		_, err = common.MakeAction(undo_redo.NewPasteToMoveLayerAction(pastePos, copyResult, moveLayerId), mapsModel, mapElem.MapId, false)
 		if err != nil {
 			// TODO
 			fmt.Println(err)

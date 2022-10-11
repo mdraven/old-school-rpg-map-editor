@@ -1,6 +1,7 @@
 package copy_model
 
 import (
+	"math"
 	"old-school-rpg-map-editor/models/map_model"
 	"old-school-rpg-map-editor/utils"
 	"sync"
@@ -15,6 +16,41 @@ type CopyResultLocations struct {
 
 type CopyResult struct {
 	Layers map[uuid.UUID]CopyResultLocations
+}
+
+func (m *CopyResult) Bounds() (leftTop, rightBottom utils.Int2) {
+	leftTop = utils.NewInt2(math.MaxInt32, math.MaxInt32)
+	rightBottom = utils.NewInt2(math.MinInt32, math.MinInt32)
+
+	for _, layer := range m.Layers {
+		for k, v := range layer.Locations {
+			if !v.IsEmptyLocation() {
+				if k.X < leftTop.X {
+					leftTop.X = k.X
+				}
+				if k.Y < leftTop.Y {
+					leftTop.Y = k.Y
+				}
+				if k.X > rightBottom.X {
+					rightBottom.X = k.X
+				}
+				if k.Y > rightBottom.Y {
+					rightBottom.Y = k.Y
+				}
+			}
+		}
+	}
+
+	// В случае, если или layer.Locations пустой, или в нём нет ни одного выделенного элемента
+	if leftTop.X == math.MaxInt32 {
+		leftTop = utils.Int2{}
+		rightBottom = utils.Int2{}
+	} else {
+		rightBottom.X++
+		rightBottom.Y++
+	}
+
+	return
 }
 
 func (r *CopyResult) Clone() CopyResult {

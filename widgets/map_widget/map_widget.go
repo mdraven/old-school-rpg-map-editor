@@ -457,19 +457,25 @@ func (w *MapWidget) Scrolled(ev *fyne.ScrollEvent) {
 	w.offset = oldOffset
 }
 
-func (w *MapWidget) Offset() utils.Float2 {
+func (w *MapWidget) SetCenter(pos utils.Int2) {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
-	return w.offset
+	fFloorSize := float32(w.imageConfig.FloorSize)
+
+	pX, pY := w.floorCoordsToScreenPixel(pos.X, pos.Y, 0, 0, uint((fFloorSize+1)*w.scale))
+	w.offset = utils.NewFloat2(float32(pX)-w.Size().Width/2, float32(pY)-w.Size().Height/2)
 }
 
-func (w *MapWidget) SetOffset(v utils.Float2) {
+func (w *MapWidget) Center() utils.Int2 {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
-	w.offset = v
-	w.Refresh()
+	fFloorSize := float32(w.imageConfig.FloorSize)
+
+	mapX, mapY, _, _ := w.screenPixelToFloorCoords(uint(w.Size().Width/2), uint(w.Size().Height/2), uint((fFloorSize+1)*w.scale))
+
+	return utils.NewInt2(mapX, mapY)
 }
 
 func (w *MapWidget) Scale() float32 {
