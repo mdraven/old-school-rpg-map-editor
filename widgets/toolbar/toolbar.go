@@ -62,11 +62,10 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 	newFile := toolbar_action.NewToolbarAction(theme.FileIcon(), func() {
 		mapModel := map_model.NewMapModel()
 
-		moveLayerIndex := mapModel.AddLayerWithId(uuid.New())
-		mapModel.SetSystem(moveLayerIndex, true)
+		moveLayerIndex := mapModel.AddLayerWithId(uuid.New(), map_model.MoveLayerType)
 		mapModel.SetName(moveLayerIndex, "MOVE")
 
-		layerIndex := mapModel.AddLayerWithId(uuid.New())
+		layerIndex := mapModel.AddLayerWithId(uuid.New(), map_model.RegularLayerType)
 		mapModel.SetName(layerIndex, "Layer1")
 
 		rotateModel := rotate_model.NewRotateModel(0)
@@ -222,7 +221,7 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 	})
 	w.paste = toolbar_action.NewToolbarAction(theme.ContentPasteIcon(), func() {
 		mapElem := mapTabs.Selected()
-		moveLayerIndex := mapElem.Model.LayerIndexByName("MOVE", true)
+		moveLayerIndex := mapElem.Model.LayerIndexByName("MOVE", map_model.MoveLayerType)
 		moveLayerId := mapElem.Model.LayerInfo(moveLayerIndex).Uuid
 
 		if copyModel.IsEmpty() {
@@ -365,7 +364,7 @@ func (w *Toolbar) setMapElem(mapElem maps_model.MapElem) {
 			if leftTop != rightBottom {
 				w.moveModeToolbarAction.ToolbarObject().(*widget.Button).Enable()
 
-				moveLayerIndex := mapElem.Model.LayerIndexByName("MOVE", true)
+				moveLayerIndex := mapElem.Model.LayerIndexByName("MOVE", map_model.MoveLayerType)
 
 				leftTop, rightBottom := mapElem.Model.Bounds(moveLayerIndex)
 
@@ -442,7 +441,7 @@ func SetMode(mapsModel *maps_model.MapsModel, mapId uuid.UUID, mode mode_model.M
 
 	if mode == mode_model.SetMode || mode == mode_model.SelectMode {
 		locations := mapElem.Model
-		moveLayerIndex := locations.LayerIndexByName("MOVE", true)
+		moveLayerIndex := locations.LayerIndexByName("MOVE", map_model.MoveLayerType)
 
 		if mapElem.ModeModel.Mode() != mode {
 			_, err := common.MakeAction(undo_redo.NewMoveFromSelectModelAction(locations.LayerInfo(moveLayerIndex).Uuid, mode), mapsModel, mapElem.MapId, false)
@@ -455,7 +454,7 @@ func SetMode(mapsModel *maps_model.MapsModel, mapId uuid.UUID, mode mode_model.M
 	} else if mode == mode_model.MoveMode {
 		modeModel := mapElem.ModeModel
 		locations := mapElem.Model
-		moveLayerIndex := locations.LayerIndexByName("MOVE", true)
+		moveLayerIndex := locations.LayerIndexByName("MOVE", map_model.MoveLayerType)
 
 		if modeModel.Mode() != mode_model.MoveMode {
 			_, err := common.MakeAction(undo_redo.NewMoveToSelectModelAction(locations.LayerInfo(moveLayerIndex).Uuid), mapsModel, mapElem.MapId, false)

@@ -171,21 +171,20 @@ func (a *SetNoteIdAction) Undo(m UndoRedoActionModels) {
 }
 
 type AddLayerAction struct {
-	layerId uuid.UUID
-	name    string
-	visible bool
-	system  bool
+	layerId   uuid.UUID
+	name      string
+	visible   bool
+	layerType map_model.LayerType
 }
 
-func NewAddLayerAction(name string, visible, system bool) *AddLayerAction {
-	return &AddLayerAction{layerId: uuid.New(), name: name, visible: visible, system: system}
+func NewAddLayerAction(name string, visible bool, layerType map_model.LayerType) *AddLayerAction {
+	return &AddLayerAction{layerId: uuid.New(), name: name, visible: visible, layerType: layerType}
 }
 
 func (a *AddLayerAction) Redo(m UndoRedoActionModels) {
-	layerIndex := m.M.AddLayerWithId(a.layerId)
+	layerIndex := m.M.AddLayerWithId(a.layerId, a.layerType)
 	m.M.SetName(layerIndex, a.name)
 	m.M.SetVisible(layerIndex, a.visible)
-	m.M.SetSystem(layerIndex, a.system)
 }
 
 func (a *AddLayerAction) Undo(m UndoRedoActionModels) {

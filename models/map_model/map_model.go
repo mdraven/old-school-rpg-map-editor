@@ -22,11 +22,18 @@ func (l *Location) IsEmptyLocation() bool {
 	return l.Floor == 0 && l.RightWall == 0 && l.BottomWall == 0 && len(l.NoteId) == 0
 }
 
+type LayerType int
+
+const (
+	RegularLayerType LayerType = 0
+	MoveLayerType    LayerType = 1
+)
+
 type LayerInfo struct {
 	Uuid    uuid.UUID `json:"uuid"`
 	Name    string    `json:"name"`
 	Visible bool      `json:"visible"`
-	System  bool      `json:"system"` // слой создан для целей приложения(например для select)
+	Type    LayerType `json:"type"`
 }
 
 type Layer struct {
@@ -34,8 +41,8 @@ type Layer struct {
 	locations map[utils.Int2]Location
 }
 
-func newLayer(uuid uuid.UUID) *Layer {
-	return &Layer{LayerInfo: LayerInfo{Uuid: uuid, Visible: true}, locations: make(map[utils.Int2]Location)}
+func newLayer(uuid uuid.UUID, layerType LayerType) *Layer {
+	return &Layer{LayerInfo: LayerInfo{Uuid: uuid, Visible: true, Type: layerType}, locations: make(map[utils.Int2]Location)}
 }
 
 func (l *Layer) MarshalJSON() ([]byte, error) {
@@ -122,23 +129,23 @@ func (m *MapModel) LayerIndexById(uuid uuid.UUID) int32 {
 	return int32(layerIndex)
 }
 
-func (m *MapModel) LayerIndexByName(name string, system bool) int32 {
+func (m *MapModel) LayerIndexByName(name string, layerType LayerType) int32 {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
 	layerIndex := slices.IndexFunc(m.layers, func(l *Layer) bool {
-		return l.Name == name && l.System == system
+		return l.Name == name && l.LayerInfo.Type == layerType
 	})
 
 	return int32(layerIndex)
 }
 
-func (m *MapModel) AddLayerWithId(uuid uuid.UUID) (layerIndex int32) {
+func (m *MapModel) AddLayerWithId(uuid uuid.UUID, layerType LayerType) (layerIndex int32) {
 	send := func() bool {
 		m.mutex.Lock()
 		defer m.mutex.Unlock()
 
-		m.layers = append(m.layers, newLayer(uuid))
+		m.layers = append(m.layers, newLayer(uuid, layerType))
 
 		layerIndex = int32(len(m.layers) - 1)
 
@@ -373,25 +380,6 @@ func (m *MapModel) SetVisible(layerIndex int32, value bool) {
 		}
 
 		m.layers[layerIndex].Visible = value
-
-		return true
-	}()
-
-	if send {
-		m.listeners.Emit()
-	}
-}
-
-func (m *MapModel) SetSystem(layerIndex int32, value bool) {
-	send := func() bool {
-		m.mutex.Lock()
-		defer m.mutex.Unlock()
-
-		if m.layers[layerIndex].System == value {
-			return false
-		}
-
-		m.layers[layerIndex].System = value
 
 		return true
 	}()
@@ -717,7 +705,7 @@ func (m *MapModel) MoveTo(layerIndex int32, offsetX, offsetY int) {
 
 func (m *MapModel) HasVisible() bool {
 	for _, l := range m.LayerInfos() {
-		if !l.System && l.Visible {
+		if l.Type == RegularLayerType && l.Visible {
 			return true
 		}
 	}
@@ -755,7 +743,7 @@ func LayerIndexWithoutSystemToWithSystem(model *MapModel, layerIndex int32) int3
 
 	for i := 0; i < len(model.layers); i++ {
 		layerInfo := model.layers[i].LayerInfo
-		if !layerInfo.System {
+		if layerInfo.Type == RegularLayerType {
 			if layerIndex == 0 {
 				return int32(i)
 			}
@@ -778,7 +766,7 @@ func LayerIndexWithSystemToWithoutSystem(model *MapModel, layerIndex int32) int3
 		return -1
 	}
 
-	if model.layers[int(layerIndex)].LayerInfo.System {
+	if model.layers[int(layerIndex)].LayerInfo.Type != RegularLayerType {
 		return -1
 	}
 
@@ -786,7 +774,7 @@ func LayerIndexWithSystemToWithoutSystem(model *MapModel, layerIndex int32) int3
 
 	for i := 0; i <= int(layerIndex); i++ {
 		layerInfo := model.layers[i].LayerInfo
-		if !layerInfo.System {
+		if layerInfo.Type == RegularLayerType {
 			counter++
 		}
 	}
@@ -801,7 +789,7 @@ func LengthWithoutSystem(model *MapModel) int {
 	counter := 0
 	for i := 0; i < len(model.layers); i++ {
 		layerInfo := model.layers[i].LayerInfo
-		if !layerInfo.System {
+		if layerInfo.Type == RegularLayerType {
 			counter++
 		}
 	}
@@ -817,7 +805,7 @@ func MoveUpWithoutSystem(model *MapModel, layerIndex int32, offset int32) {
 		from := layerIndex - 1
 		for ; from >= 0; from-- {
 			layerInfo := model.layers[from].LayerInfo
-			if !layerInfo.System {
+			if layerInfo.Type == RegularLayerType {
 				offset--
 				if offset == 0 {
 					break
@@ -853,7 +841,7 @@ func MoveDownWithoutSystem(model *MapModel, layerIndex int32, offset int32) {
 		from := layerIndex + 1
 		for ; from < int32(len(model.layers)); from++ {
 			layerInfo := model.layers[from].LayerInfo
-			if !layerInfo.System {
+			if layerInfo.Type == RegularLayerType {
 				offset--
 				if offset == 0 {
 					break

@@ -248,7 +248,7 @@ func main() {
 	addLayerButtom := widget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
 		mapElem := mapTabs.Selected()
 
-		_, err := common.MakeAction(undo_redo.NewAddLayerAction("Layer", true, false), mapsModel, mapElem.MapId, false)
+		_, err := common.MakeAction(undo_redo.NewAddLayerAction("Layer", true, map_model.RegularLayerType), mapsModel, mapElem.MapId, false)
 		if err != nil {
 			// TODO
 			fmt.Println(err)

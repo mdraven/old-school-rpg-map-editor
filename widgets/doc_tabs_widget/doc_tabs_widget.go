@@ -221,7 +221,7 @@ func NewDocTabsWidget(mapsModel *maps_model.MapsModel, floorPaletteWidget *palet
 					}
 					tabs = slices.Delete(tabs, index, index+1)
 				} else {
-					moveLayerId := m.Model.LayerInfo(m.Model.LayerIndexByName("MOVE", true)).Uuid
+					moveLayerId := m.Model.LayerInfo(m.Model.LayerIndexByName("MOVE", map_model.MoveLayerType)).Uuid
 
 					mapWidget := newMapWidget(mapsModel, m.MapId, moveLayerId, w.IsFloorTabSelected(), floorPaletteWidget, wallPaletteWidget, notesWidget, paletteTabFloors, paletteTabNotes, paletteTabs, layersWidget, floorImage, wallImage, floorSelectedImage, wallSelectedImage, imageConfig)
 					item := container.NewTabItem(tabName, mapWidget)
