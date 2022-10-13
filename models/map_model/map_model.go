@@ -129,15 +129,19 @@ func (m *MapModel) LayerIndexById(uuid uuid.UUID) int32 {
 	return int32(layerIndex)
 }
 
-func (m *MapModel) LayerIndexByName(name string, layerType LayerType) int32 {
+// TODO: rename to LayersIndicesByType
+func (m *MapModel) LayerIndexByType(layerType LayerType) []int32 {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	layerIndex := slices.IndexFunc(m.layers, func(l *Layer) bool {
-		return l.Name == name && l.LayerInfo.Type == layerType
-	})
+	var result []int32
+	for index, l := range m.layers {
+		if l.LayerInfo.Type == layerType {
+			result = append(result, int32(index))
+		}
+	}
 
-	return int32(layerIndex)
+	return result
 }
 
 func (m *MapModel) AddLayerWithId(uuid uuid.UUID, layerType LayerType) (layerIndex int32) {
@@ -705,7 +709,7 @@ func (m *MapModel) MoveTo(layerIndex int32, offsetX, offsetY int) {
 
 func (m *MapModel) HasVisible() bool {
 	for _, l := range m.LayerInfos() {
-		if l.Type == RegularLayerType && l.Visible {
+		if l.Visible {
 			return true
 		}
 	}
@@ -731,140 +735,4 @@ func (m *MapModel) AddBeforeMoveLayerListener(listener func()) func() {
 
 func (m *MapModel) AddAfterMoveLayerListener(listener func()) func() {
 	return m.afterMoveLayerListeners.AddSlot(listener)
-}
-
-func LayerIndexWithoutSystemToWithSystem(model *MapModel, layerIndex int32) int32 {
-	if layerIndex < 0 {
-		panic("layerIndex < 0")
-	}
-
-	model.mutex.Lock()
-	defer model.mutex.Unlock()
-
-	for i := 0; i < len(model.layers); i++ {
-		layerInfo := model.layers[i].LayerInfo
-		if layerInfo.Type == RegularLayerType {
-			if layerIndex == 0 {
-				return int32(i)
-			}
-			layerIndex--
-		}
-	}
-
-	return -1
-}
-
-func LayerIndexWithSystemToWithoutSystem(model *MapModel, layerIndex int32) int32 {
-	if layerIndex < 0 {
-		panic("layerIndex < 0")
-	}
-
-	model.mutex.Lock()
-	defer model.mutex.Unlock()
-
-	if int(layerIndex) >= len(model.layers) {
-		return -1
-	}
-
-	if model.layers[int(layerIndex)].LayerInfo.Type != RegularLayerType {
-		return -1
-	}
-
-	counter := int32(0)
-
-	for i := 0; i <= int(layerIndex); i++ {
-		layerInfo := model.layers[i].LayerInfo
-		if layerInfo.Type == RegularLayerType {
-			counter++
-		}
-	}
-
-	return counter - 1
-}
-
-func LengthWithoutSystem(model *MapModel) int {
-	model.mutex.Lock()
-	defer model.mutex.Unlock()
-
-	counter := 0
-	for i := 0; i < len(model.layers); i++ {
-		layerInfo := model.layers[i].LayerInfo
-		if layerInfo.Type == RegularLayerType {
-			counter++
-		}
-	}
-
-	return counter
-}
-
-func MoveUpWithoutSystem(model *MapModel, layerIndex int32, offset int32) {
-	ok, from := func() (bool, int32) {
-		model.mutex.Lock()
-		defer model.mutex.Unlock()
-
-		from := layerIndex - 1
-		for ; from >= 0; from-- {
-			layerInfo := model.layers[from].LayerInfo
-			if layerInfo.Type == RegularLayerType {
-				offset--
-				if offset == 0 {
-					break
-				}
-			}
-		}
-
-		return model.checkMoveUp(layerIndex, layerIndex-from), from
-	}()
-
-	if !ok {
-		return
-	}
-
-	model.beforeMoveLayerListeners.Emit()
-
-	func() {
-		model.mutex.Lock()
-		defer model.mutex.Unlock()
-
-		model.moveUp(layerIndex, layerIndex-from)
-	}()
-
-	model.afterMoveLayerListeners.Emit()
-	model.listeners.Emit()
-}
-
-func MoveDownWithoutSystem(model *MapModel, layerIndex int32, offset int32) {
-	ok, from := func() (bool, int32) {
-		model.mutex.Lock()
-		defer model.mutex.Unlock()
-
-		from := layerIndex + 1
-		for ; from < int32(len(model.layers)); from++ {
-			layerInfo := model.layers[from].LayerInfo
-			if layerInfo.Type == RegularLayerType {
-				offset--
-				if offset == 0 {
-					break
-				}
-			}
-		}
-
-		return model.checkMoveDown(layerIndex, from-layerIndex), from
-	}()
-
-	if !ok {
-		return
-	}
-
-	model.beforeMoveLayerListeners.Emit()
-
-	func() {
-		model.mutex.Lock()
-		defer model.mutex.Unlock()
-
-		model.moveDown(layerIndex, from-layerIndex)
-	}()
-
-	model.afterMoveLayerListeners.Emit()
-	model.listeners.Emit()
 }

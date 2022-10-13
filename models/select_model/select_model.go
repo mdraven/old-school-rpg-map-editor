@@ -6,14 +6,13 @@ import (
 	"old-school-rpg-map-editor/utils"
 	"sync"
 
-	"github.com/google/uuid"
 	"golang.org/x/exp/maps"
 )
 
 type Selected struct {
-	Floor      uuid.UUID
-	RightWall  uuid.UUID
-	BottomWall uuid.UUID
+	Floor      bool
+	RightWall  bool
+	BottomWall bool
 }
 
 type SelectModel struct {
@@ -40,12 +39,12 @@ func (m *SelectModel) Clear() {
 }
 
 func (m *SelectModel) selectFloor(x int, y int) bool {
-	layerUuid, v := m.mapModel.VisibleFloor(x, y)
+	_, v := m.mapModel.VisibleFloor(x, y)
 	if v > 0 {
 		pos := utils.NewInt2(x, y)
 
 		selected := m.selected[pos]
-		selected.Floor = layerUuid
+		selected.Floor = true
 		m.selected[pos] = selected
 
 		return true
@@ -70,11 +69,11 @@ func (m *SelectModel) SelectFloor(x int, y int) {
 func (m *SelectModel) selectWall(x int, y int, isRight bool) bool {
 	pos := utils.NewInt2(x, y)
 
-	layerUuid, v := m.mapModel.VisibleWall(x, y, isRight)
+	_, v := m.mapModel.VisibleWall(x, y, isRight)
 	if isRight {
 		if v > 0 {
 			selected := m.selected[pos]
-			selected.RightWall = layerUuid
+			selected.RightWall = true
 			m.selected[pos] = selected
 
 			return true
@@ -82,7 +81,7 @@ func (m *SelectModel) selectWall(x int, y int, isRight bool) bool {
 	} else {
 		if v > 0 {
 			selected := m.selected[pos]
-			selected.BottomWall = layerUuid
+			selected.BottomWall = true
 			m.selected[pos] = selected
 
 			return true
@@ -125,7 +124,7 @@ func (m *SelectModel) UnselectAll() {
 }
 
 func isEmptySelected(s Selected) bool {
-	return s.Floor == uuid.UUID{} && s.RightWall == uuid.UUID{} && s.BottomWall == uuid.UUID{}
+	return !s.Floor && !s.RightWall && !s.BottomWall
 }
 
 func (m *SelectModel) unselectFloor(x int, y int) bool {
@@ -133,7 +132,7 @@ func (m *SelectModel) unselectFloor(x int, y int) bool {
 
 	v, exists := m.selected[pos]
 	if exists {
-		v.Floor = uuid.UUID{}
+		v.Floor = false
 		m.selected[pos] = v
 
 		if isEmptySelected(v) {
@@ -165,9 +164,9 @@ func (m *SelectModel) unselectWall(x int, y int, isRight bool) bool {
 	v, exists := m.selected[pos]
 	if exists {
 		if isRight {
-			v.RightWall = uuid.UUID{}
+			v.RightWall = false
 		} else {
-			v.BottomWall = uuid.UUID{}
+			v.BottomWall = false
 		}
 		m.selected[pos] = v
 
@@ -201,7 +200,7 @@ func (m *SelectModel) IsFloorSelected(x int, y int) bool {
 	pos := utils.NewInt2(x, y)
 
 	v, exists := m.selected[pos]
-	return exists && v.Floor != uuid.UUID{}
+	return exists && v.Floor
 }
 
 func (m *SelectModel) IsWallSelected(x int, y int, isRight bool) bool {
@@ -212,9 +211,9 @@ func (m *SelectModel) IsWallSelected(x int, y int, isRight bool) bool {
 
 	v, exists := m.selected[pos]
 	if isRight {
-		return exists && v.RightWall != uuid.UUID{}
+		return exists && v.RightWall
 	} else {
-		return exists && v.BottomWall != uuid.UUID{}
+		return exists && v.BottomWall
 	}
 }
 

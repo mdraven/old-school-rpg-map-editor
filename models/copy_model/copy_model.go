@@ -6,42 +6,35 @@ import (
 	"old-school-rpg-map-editor/utils"
 	"sync"
 
-	"github.com/google/uuid"
 	"golang.org/x/exp/maps"
 )
 
-type CopyResultLocations struct {
-	Locations map[utils.Int2]map_model.Location
-}
-
 type CopyResult struct {
-	Layers map[uuid.UUID]CopyResultLocations
+	Locations map[utils.Int2]map_model.Location
 }
 
 func (m *CopyResult) Bounds() (leftTop, rightBottom utils.Int2) {
 	leftTop = utils.NewInt2(math.MaxInt32, math.MaxInt32)
 	rightBottom = utils.NewInt2(math.MinInt32, math.MinInt32)
 
-	for _, layer := range m.Layers {
-		for k, v := range layer.Locations {
-			if !v.IsEmptyLocation() {
-				if k.X < leftTop.X {
-					leftTop.X = k.X
-				}
-				if k.Y < leftTop.Y {
-					leftTop.Y = k.Y
-				}
-				if k.X > rightBottom.X {
-					rightBottom.X = k.X
-				}
-				if k.Y > rightBottom.Y {
-					rightBottom.Y = k.Y
-				}
+	for k, v := range m.Locations {
+		if !v.IsEmptyLocation() {
+			if k.X < leftTop.X {
+				leftTop.X = k.X
+			}
+			if k.Y < leftTop.Y {
+				leftTop.Y = k.Y
+			}
+			if k.X > rightBottom.X {
+				rightBottom.X = k.X
+			}
+			if k.Y > rightBottom.Y {
+				rightBottom.Y = k.Y
 			}
 		}
 	}
 
-	// В случае, если или layer.Locations пустой, или в нём нет ни одного выделенного элемента
+	// В случае, если или m.Locations пустой, или в нём нет ни одного выделенного элемента
 	if leftTop.X == math.MaxInt32 {
 		leftTop = utils.Int2{}
 		rightBottom = utils.Int2{}
@@ -54,14 +47,7 @@ func (m *CopyResult) Bounds() (leftTop, rightBottom utils.Int2) {
 }
 
 func (r *CopyResult) Clone() CopyResult {
-	result := CopyResult{}
-	result.Layers = make(map[uuid.UUID]CopyResultLocations)
-
-	for k, v := range r.Layers {
-		result.Layers[k] = CopyResultLocations{Locations: maps.Clone(v.Locations)}
-	}
-
-	return result
+	return CopyResult{Locations: maps.Clone(r.Locations)}
 }
 
 type CopyModel struct {

@@ -7,28 +7,24 @@ import (
 	"image/draw"
 	"image/png"
 	"log"
-	"old-school-rpg-map-editor/common"
 	"old-school-rpg-map-editor/configuration"
 	"old-school-rpg-map-editor/models/copy_model"
-	"old-school-rpg-map-editor/models/map_model"
 	"old-school-rpg-map-editor/models/maps_model"
 	"old-school-rpg-map-editor/models/mode_model"
-	"old-school-rpg-map-editor/rename_layer_dialog"
-	"old-school-rpg-map-editor/undo_redo"
+	"old-school-rpg-map-editor/models/selected_map_tab_model"
 	"old-school-rpg-map-editor/widgets/doc_tabs_widget"
+	"old-school-rpg-map-editor/widgets/layer_buttons_widget"
 	"old-school-rpg-map-editor/widgets/layers_widget"
 	"old-school-rpg-map-editor/widgets/notes_widget"
 	"old-school-rpg-map-editor/widgets/palette_widget"
-	"old-school-rpg-map-editor/widgets/toolbar"
+	"old-school-rpg-map-editor/widgets/toolbar_widget"
 	"os"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
 	"github.com/goki/freetype/truetype"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -214,98 +210,37 @@ func main() {
 	floorPaletteWidget := palette_widget.NewPaletteWidget(floorImage, imageConfig.FloorSize, imageConfig.FloorSize, 0)
 	wallPaletteWidget := palette_widget.NewPaletteWidget(wallImage, imageConfig.WallWidth, imageConfig.FloorSize, (imageConfig.FloorSize-imageConfig.WallWidth)/2)
 
-	var mapTabs *doc_tabs_widget.DocTabsWidget
+	selectedMapTabModel := selected_map_tab_model.NewSelectedLayerModel()
 
 	keyS := desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: fyne.KeyModifierControl}
 	w.Canvas().AddShortcut(&keyS, func(shortcut fyne.Shortcut) {
-		mapElem := mapTabs.Selected()
+		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 		if mapElem.ModeModel.Mode() == mode_model.SetMode {
-			toolbar.SetMode(mapsModel, mapElem.MapId, mode_model.SelectMode)
+			toolbar_widget.SetMode(mapsModel, mapElem.MapId, mode_model.SelectMode)
 		} else if mapElem.ModeModel.Mode() == mode_model.SelectMode {
-			toolbar.SetMode(mapsModel, mapElem.MapId, mode_model.SetMode)
+			toolbar_widget.SetMode(mapsModel, mapElem.MapId, mode_model.SetMode)
 		}
 	})
 
 	keyM := desktop.CustomShortcut{KeyName: fyne.KeyM, Modifier: fyne.KeyModifierControl}
 	w.Canvas().AddShortcut(&keyM, func(shortcut fyne.Shortcut) {
-		mapElem := mapTabs.Selected()
-		toolbar.SetMode(mapsModel, mapElem.MapId, mode_model.MoveMode)
+		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
+		toolbar_widget.SetMode(mapsModel, mapElem.MapId, mode_model.MoveMode)
 	})
 
 	keyZ := desktop.CustomShortcut{KeyName: fyne.KeyZ, Modifier: fyne.KeyModifierControl}
 	w.Canvas().AddShortcut(&keyZ, func(shortcut fyne.Shortcut) {
-		toolbar.Undo(mapTabs, mapsModel)
+		toolbar_widget.Undo(selectedMapTabModel, mapsModel)
 	})
 
 	keyY := desktop.CustomShortcut{KeyName: fyne.KeyY, Modifier: fyne.KeyModifierControl}
 	w.Canvas().AddShortcut(&keyY, func(shortcut fyne.Shortcut) {
-		toolbar.Redo(mapTabs, mapsModel)
+		toolbar_widget.Redo(selectedMapTabModel, mapsModel)
 	})
 
-	layersWidget := layers_widget.NewLayersWidget(nil, nil, theme.VisibilityIcon(), theme.VisibilityOffIcon())
+	layersWidget := layers_widget.NewLayersWidget(theme.VisibilityIcon(), theme.VisibilityOffIcon())
 
-	// инструменты слева(слои и палитра)
-	addLayerButtom := widget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
-		mapElem := mapTabs.Selected()
-
-		_, err := common.MakeAction(undo_redo.NewAddLayerAction("Layer", true, map_model.RegularLayerType), mapsModel, mapElem.MapId, false)
-		if err != nil {
-			// TODO
-			fmt.Println(err)
-			return
-		}
-	})
-	removeLayerButtom := widget.NewButtonWithIcon("", theme.ContentRemoveIcon(), func() {
-		mapElem := mapTabs.Selected()
-		locations := mapElem.Model
-
-		activeLayer := map_model.LayerIndexWithoutSystemToWithSystem(locations, int32(layersWidget.Selected))
-		layerId := locations.LayerInfo(activeLayer).Uuid
-
-		_, err := common.MakeAction(undo_redo.NewDeleteLayerAction(layerId), mapsModel, mapElem.MapId, false)
-		if err != nil {
-			// TODO
-			fmt.Println(err)
-			return
-		}
-	})
-	moveUpLayerButtom := widget.NewButtonWithIcon("", theme.MoveUpIcon(), func() {
-		mapElem := mapTabs.Selected()
-		locations := mapElem.Model
-
-		activeLayer := map_model.LayerIndexWithoutSystemToWithSystem(locations, int32(layersWidget.Selected))
-		layerId := locations.LayerInfo(activeLayer).Uuid
-
-		_, err := common.MakeAction(undo_redo.NewMoveLayerAction(-1, layerId), mapsModel, mapElem.MapId, false)
-		if err != nil {
-			// TODO
-			fmt.Println(err)
-			return
-		}
-	})
-	moveDownLayerButtom := widget.NewButtonWithIcon("", theme.MoveDownIcon(), func() {
-		mapElem := mapTabs.Selected()
-		locations := mapElem.Model
-
-		activeLayer := map_model.LayerIndexWithoutSystemToWithSystem(locations, int32(layersWidget.Selected))
-		layerId := locations.LayerInfo(activeLayer).Uuid
-
-		_, err := common.MakeAction(undo_redo.NewMoveLayerAction(1, layerId), mapsModel, mapElem.MapId, false)
-		if err != nil {
-			// TODO
-			fmt.Println(err)
-			return
-		}
-	})
-	renameLayerButtom := widget.NewButton("Rename", func() {
-		mapElem := mapTabs.Selected()
-		locations := mapElem.Model
-		activeLayer := map_model.LayerIndexWithoutSystemToWithSystem(locations, int32(layersWidget.Selected))
-
-		dialog := rename_layer_dialog.NewRenameLayerDialog(w, locations, locations.LayerInfo(activeLayer).Uuid)
-		dialog.Show()
-	})
-	layerButtons := container.New(layout.NewHBoxLayout(), moveUpLayerButtom, moveDownLayerButtom, addLayerButtom, removeLayerButtom, renameLayerButtom)
+	layerButtons := layer_buttons_widget.NewLayerButtonsWidget(w, mapsModel, selectedMapTabModel)
 
 	notesWidget := notes_widget.NewNotesWidget(nil, borderImage, searchNoteIcon, searchNoteSelectedIcon)
 	paletteTabFloors := container.NewTabItem("Floors", container.NewVScroll(floorPaletteWidget))
@@ -327,55 +262,43 @@ func main() {
 	}
 
 	paletteTabs.OnSelected = func(ti *container.TabItem) {
-		mapWidget := mapTabs.MapWidget()
+		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
+		mapWidget := doc_tabs_widget.GetMapWidget(mapElem.ExternalData)
 		if mapWidget == nil {
 			return
 		}
 		mapWidget.SetIsClickFloor(isFloorTabSelected())
 	}
 
-	mapTabs = doc_tabs_widget.NewDocTabsWidget(mapsModel, floorPaletteWidget, wallPaletteWidget, notesWidget, paletteTabFloors, paletteTabNotes, paletteTabs, layersWidget, floorImage, wallImage, floorSelectedImage, wallSelectedImage, imageConfig)
+	mapTabs := doc_tabs_widget.NewDocTabsWidget(mapsModel, selectedMapTabModel, floorPaletteWidget, wallPaletteWidget, notesWidget, paletteTabFloors, paletteTabNotes, paletteTabs, layersWidget, floorImage, wallImage, floorSelectedImage, wallSelectedImage, imageConfig)
 	mapTabs.IsFloorTabSelected = isFloorTabSelected
 
-	tools := container.NewVSplit(paletteTabs, container.NewBorder(nil, layerButtons, nil, nil, layersWidget))
+	tools := container.NewVSplit(paletteTabs, container.NewBorder(nil, layerButtons.Container(), nil, nil, layersWidget))
 	content := container.NewHSplit(mapTabs.Container(), tools)
 	content.SetOffset(0.7)
 
 	restoreContentAndToolsSettings(config, content, tools)
 	defer saveContentAndToolsSettings(configFile, config, content, tools)
 
-	toolbar := toolbar.NewToolbar(w, fnt, mapsModel, mapTabs, copyModel, rotateLeftIcon, rotateRightIcon, setModeIcon, setModeSelectedIcon, selectModeIcon, selectModeSelectedIcon, moveModeIcon, moveModeSelectedIcon)
+	toolbar := toolbar_widget.NewToolbar(w, fnt, mapsModel, selectedMapTabModel, copyModel, rotateLeftIcon, rotateRightIcon, setModeIcon, setModeSelectedIcon, selectModeIcon, selectModeSelectedIcon, moveModeIcon, moveModeSelectedIcon)
 
 	w.SetContent(container.NewBorder(toolbar, nil, nil, nil, content))
 
-	disableAllLayerButtons := func(f bool) {
-		for _, b := range layerButtons.Objects {
-			if f {
-				b.(*widget.Button).Disable()
-			} else {
-				b.(*widget.Button).Enable()
+	disconnectDataChangeSelectedMapTabModel := selectedMapTabModel.AddDataChangeListener(func() {
+		if mapsModel.Length() == 0 {
+			layersWidget.SetMapModel(nil)
+			layersWidget.SetSelectedLayerModel(nil)
+			notesWidget.SetNotesModel(nil)
+		} else {
+			mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
+			if (mapElem.MapId != uuid.UUID{}) {
+				layersWidget.SetMapModel(mapElem.Model)
+				layersWidget.SetSelectedLayerModel(mapElem.SelectedLayerModel)
+				notesWidget.SetNotesModel(mapElem.NotesModel)
 			}
 		}
-	}
-	disableAllLayerButtons(true)
-
-	disconnectOnClosedMapTabs := mapTabs.AddOnClosedListener(func(mapElem maps_model.MapElem) {
-		if layersWidget.MapModel() == mapElem.Model {
-			layersWidget.SetMapModel(nil)
-			notesWidget.SetNotesModel(nil)
-			disableAllLayerButtons(true)
-		}
 	})
-	defer disconnectOnClosedMapTabs()
-
-	disconnectOnSelectedMapTabs := mapTabs.AddOnSelectedListener(func(mapElem maps_model.MapElem) {
-		if (mapElem.MapId != uuid.UUID{}) {
-			layersWidget.SetMapModel(mapElem.Model)
-			notesWidget.SetNotesModel(mapElem.NotesModel)
-			disableAllLayerButtons(false)
-		}
-	})
-	defer disconnectOnSelectedMapTabs()
+	defer disconnectDataChangeSelectedMapTabModel()
 
 	w.Show()
 	a.Run()

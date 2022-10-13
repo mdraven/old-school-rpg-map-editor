@@ -10,6 +10,7 @@ import (
 	"old-school-rpg-map-editor/models/rot_select_model"
 	"old-school-rpg-map-editor/models/rotate_model"
 	"old-school-rpg-map-editor/models/select_model"
+	"old-school-rpg-map-editor/models/selected_layer_model"
 	"old-school-rpg-map-editor/undo_redo"
 	"old-school-rpg-map-editor/utils"
 	"os"
@@ -28,6 +29,7 @@ type MapElem struct {
 	RotSelectModel        *rot_select_model.RotSelectModel
 	NotesModel            *notes_model.NotesModel
 	UndoRedoQueue         *undo_redo.UndoRedoQueue
+	SelectedLayerModel    *selected_layer_model.SelectedLayerModel
 	MapId                 uuid.UUID
 	FilePath              string // если пустой, то файла нет
 	ChangeGeneration      uint64 // используется чтобы определять был изменён файл или нет
@@ -92,14 +94,15 @@ func (m *MapsModel) UnmarshalJSON(d []byte) error {
 		rotMapModel := rot_map_model.NewRotMapMode(mapModel, rotateModel)
 		rotSelectModel := rot_select_model.NewRotSelectModel(selectModel, rotateModel)
 		undoRedoQueue := undo_redo.NewUndoRedoQueue(100 /*TODO*/)
+		selectedLayerModel := selected_layer_model.NewSelectedLayerModel()
 
-		m.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, file)
+		m.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, selectedLayerModel, file)
 	}
 
 	return nil
 }
 
-func (m *MapsModel) Add(model *map_model.MapModel, selectModel *select_model.SelectModel, modeModel *mode_model.ModeModel, rotateModel *rotate_model.RotateModel, rotMapModel *rot_map_model.RotMapModel, rotSelectModel *rot_select_model.RotSelectModel, notesModel *notes_model.NotesModel, undoRedoQueue *undo_redo.UndoRedoQueue, filePath string) (mapId uuid.UUID) {
+func (m *MapsModel) Add(model *map_model.MapModel, selectModel *select_model.SelectModel, modeModel *mode_model.ModeModel, rotateModel *rotate_model.RotateModel, rotMapModel *rot_map_model.RotMapModel, rotSelectModel *rot_select_model.RotSelectModel, notesModel *notes_model.NotesModel, undoRedoQueue *undo_redo.UndoRedoQueue, selectedLayerModel *selected_layer_model.SelectedLayerModel, filePath string) (mapId uuid.UUID) {
 	listeners := func() utils.Signal0 {
 		m.mutex.Lock()
 		defer m.mutex.Unlock()
@@ -107,16 +110,17 @@ func (m *MapsModel) Add(model *map_model.MapModel, selectModel *select_model.Sel
 		mapId = uuid.New()
 
 		m.maps[mapId] = MapElem{
-			Model:          model,
-			SelectModel:    selectModel,
-			ModeModel:      modeModel,
-			RotateModel:    rotateModel,
-			RotMapModel:    rotMapModel,
-			RotSelectModel: rotSelectModel,
-			NotesModel:     notesModel,
-			UndoRedoQueue:  undoRedoQueue,
-			MapId:          mapId,
-			FilePath:       filePath,
+			Model:              model,
+			SelectModel:        selectModel,
+			ModeModel:          modeModel,
+			RotateModel:        rotateModel,
+			RotMapModel:        rotMapModel,
+			RotSelectModel:     rotSelectModel,
+			NotesModel:         notesModel,
+			UndoRedoQueue:      undoRedoQueue,
+			SelectedLayerModel: selectedLayerModel,
+			MapId:              mapId,
+			FilePath:           filePath,
 		}
 
 		return m.listeners.Clone()
@@ -248,6 +252,13 @@ func (m *MapsModel) UpdateSaveChangeGeneration(mapId uuid.UUID) {
 	}()
 
 	listeners.Emit()
+}
+
+func (m *MapsModel) Length() int {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	return len(m.maps)
 }
 
 func (m *MapsModel) AddDataChangeListener(listener func()) func() {

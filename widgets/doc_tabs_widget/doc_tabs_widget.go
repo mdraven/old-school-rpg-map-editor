@@ -7,6 +7,7 @@ import (
 	"old-school-rpg-map-editor/configuration"
 	"old-school-rpg-map-editor/models/map_model"
 	"old-school-rpg-map-editor/models/maps_model"
+	"old-school-rpg-map-editor/models/selected_map_tab_model"
 	"old-school-rpg-map-editor/undo_redo"
 	"old-school-rpg-map-editor/utils"
 	"old-school-rpg-map-editor/widgets/layers_widget"
@@ -22,7 +23,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func newMapWidget(mapsModel *maps_model.MapsModel, mapId uuid.UUID, moveLayerId uuid.UUID, isClickFloor bool, floorPaletteWidget *palette_widget.PaletteWidget, wallPaletteWidget *palette_widget.PaletteWidget, notesWidget *notes_widget.NotesWidget, paletteTabFloors *container.TabItem, paletteTabNotes *container.TabItem, paletteTabs *container.AppTabs, layersWidget *layers_widget.LayersWidget, floorImage, wallImage, floorSelectedImage, wallSelectedImage image.Image, imageConfig configuration.ImageConfig) *map_widget.MapWidget {
+func newMapWidget(mapsModel *maps_model.MapsModel, mapId uuid.UUID, isClickFloor bool, floorPaletteWidget *palette_widget.PaletteWidget, wallPaletteWidget *palette_widget.PaletteWidget, notesWidget *notes_widget.NotesWidget, paletteTabFloors *container.TabItem, paletteTabNotes *container.TabItem, paletteTabs *container.AppTabs, layersWidget *layers_widget.LayersWidget, floorImage, wallImage, floorSelectedImage, wallSelectedImage image.Image, imageConfig configuration.ImageConfig) *map_widget.MapWidget {
 	mapElem := mapsModel.GetById(mapId)
 	model := mapElem.Model
 	rotModel := mapElem.RotMapModel
@@ -35,7 +36,7 @@ func newMapWidget(mapsModel *maps_model.MapsModel, mapId uuid.UUID, moveLayerId 
 			}
 
 			if selectedTab == paletteTabFloors {
-				activeLayer := map_model.LayerIndexWithoutSystemToWithSystem(model, int32(layersWidget.Selected))
+				activeLayer := mapElem.SelectedLayerModel.Selected()
 				layerId := model.LayerInfo(activeLayer).Uuid
 
 				value := uint32(floorPaletteWidget.Selected())
@@ -50,7 +51,7 @@ func newMapWidget(mapsModel *maps_model.MapsModel, mapId uuid.UUID, moveLayerId 
 					return
 				}
 			} else if selectedTab == paletteTabNotes {
-				activeLayer := map_model.LayerIndexWithoutSystemToWithSystem(model, int32(layersWidget.Selected))
+				activeLayer := mapElem.SelectedLayerModel.Selected()
 				layerId := model.LayerInfo(activeLayer).Uuid
 
 				value := notesWidget.Selected()
@@ -66,7 +67,7 @@ func newMapWidget(mapsModel *maps_model.MapsModel, mapId uuid.UUID, moveLayerId 
 				}
 			}
 		}, func(x, y int, isRight bool) {
-			activeLayer := map_model.LayerIndexWithoutSystemToWithSystem(model, int32(layersWidget.Selected))
+			activeLayer := mapElem.SelectedLayerModel.Selected()
 			layerId := model.LayerInfo(activeLayer).Uuid
 
 			value := uint32(wallPaletteWidget.Selected())
@@ -92,6 +93,9 @@ func newMapWidget(mapsModel *maps_model.MapsModel, mapId uuid.UUID, moveLayerId 
 					return
 				}
 			}
+
+			moveLayerIndex := pie.FirstOr(mapElem.Model.LayerIndexByType(map_model.MoveLayerType), -1)
+			moveLayerId := mapElem.Model.LayerInfo(moveLayerIndex).Uuid
 
 			_, err := common.MakeAction(undo_redo.NewMoveToSelectedAction(moveLayerId, utils.NewInt2(offsetX, offsetY)), mapsModel, mapId, true)
 			if err != nil {
@@ -160,18 +164,18 @@ func newMapWidget(mapsModel *maps_model.MapsModel, mapId uuid.UUID, moveLayerId 
 }
 
 type DocTabsWidget struct {
-	container *container.DocTabs
-	mapsModel *maps_model.MapsModel
+	container           *container.DocTabs
+	mapsModel           *maps_model.MapsModel
+	selectedMapTabModel *selected_map_tab_model.SelectedMapTabModel
 
-	onClosed           utils.Signal1[maps_model.MapElem]
-	onSelected         utils.Signal1[maps_model.MapElem]
 	IsFloorTabSelected func() bool
 }
 
-func NewDocTabsWidget(mapsModel *maps_model.MapsModel, floorPaletteWidget *palette_widget.PaletteWidget, wallPaletteWidget *palette_widget.PaletteWidget, notesWidget *notes_widget.NotesWidget, paletteTabFloors *container.TabItem, paletteTabNotes *container.TabItem, paletteTabs *container.AppTabs, layersWidget *layers_widget.LayersWidget, floorImage, wallImage, floorSelectedImage, wallSelectedImage image.Image, imageConfig configuration.ImageConfig) *DocTabsWidget {
+func NewDocTabsWidget(mapsModel *maps_model.MapsModel, selectedMapTabModel *selected_map_tab_model.SelectedMapTabModel, floorPaletteWidget *palette_widget.PaletteWidget, wallPaletteWidget *palette_widget.PaletteWidget, notesWidget *notes_widget.NotesWidget, paletteTabFloors *container.TabItem, paletteTabNotes *container.TabItem, paletteTabs *container.AppTabs, layersWidget *layers_widget.LayersWidget, floorImage, wallImage, floorSelectedImage, wallSelectedImage image.Image, imageConfig configuration.ImageConfig) *DocTabsWidget {
 	w := &DocTabsWidget{}
 	w.container = container.NewDocTabs()
 	w.mapsModel = mapsModel
+	w.selectedMapTabModel = selectedMapTabModel
 
 	w.container.OnClosed = func(ti *container.TabItem) {
 		mapWidget := ti.Content.(*map_widget.MapWidget)
@@ -180,13 +184,13 @@ func NewDocTabsWidget(mapsModel *maps_model.MapsModel, floorPaletteWidget *palet
 		mapElem := mapsModel.GetByExternalData(ti)
 		mapsModel.Delete(mapElem.MapId)
 
-		w.onClosed.Emit(mapElem)
+		w.selectedMapTabModel.SetSelected(uuid.UUID{})
 	}
 
 	w.container.OnSelected = func(ti *container.TabItem) {
 		mapElem := mapsModel.GetByExternalData(ti)
 
-		w.onSelected.Emit(mapElem)
+		w.selectedMapTabModel.SetSelected(mapElem.MapId)
 	}
 
 	mapsModel.AddDataChangeListener(func() {
@@ -221,9 +225,7 @@ func NewDocTabsWidget(mapsModel *maps_model.MapsModel, floorPaletteWidget *palet
 					}
 					tabs = slices.Delete(tabs, index, index+1)
 				} else {
-					moveLayerId := m.Model.LayerInfo(m.Model.LayerIndexByName("MOVE", map_model.MoveLayerType)).Uuid
-
-					mapWidget := newMapWidget(mapsModel, m.MapId, moveLayerId, w.IsFloorTabSelected(), floorPaletteWidget, wallPaletteWidget, notesWidget, paletteTabFloors, paletteTabNotes, paletteTabs, layersWidget, floorImage, wallImage, floorSelectedImage, wallSelectedImage, imageConfig)
+					mapWidget := newMapWidget(mapsModel, m.MapId, w.IsFloorTabSelected(), floorPaletteWidget, wallPaletteWidget, notesWidget, paletteTabFloors, paletteTabNotes, paletteTabs, layersWidget, floorImage, wallImage, floorSelectedImage, wallSelectedImage, imageConfig)
 					item := container.NewTabItem(tabName, mapWidget)
 
 					w.container.Append(item)
@@ -239,6 +241,13 @@ func NewDocTabsWidget(mapsModel *maps_model.MapsModel, floorPaletteWidget *palet
 		}
 	})
 
+	selectedMapTabModel.AddDataChangeListener(func() {
+		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
+		if (mapElem.MapId != uuid.UUID{}) {
+			w.container.Select(mapElem.ExternalData.(*container.TabItem))
+		}
+	})
+
 	return w
 }
 
@@ -246,27 +255,10 @@ func (w *DocTabsWidget) Container() *container.DocTabs {
 	return w.container
 }
 
-func (w *DocTabsWidget) Selected() maps_model.MapElem {
-	selected := w.container.Selected()
-	if selected == nil {
-		return maps_model.MapElem{}
-	}
-
-	return w.mapsModel.GetByExternalData(selected)
-}
-
-func (w *DocTabsWidget) MapWidget() *map_widget.MapWidget {
-	selectedTab := w.container.Selected()
-	if selectedTab == nil {
+func GetMapWidget(externalData any) *map_widget.MapWidget {
+	tabItem := externalData.(*container.TabItem)
+	if tabItem == nil {
 		return nil
 	}
-	return selectedTab.Content.(*map_widget.MapWidget)
-}
-
-func (m *DocTabsWidget) AddOnClosedListener(listener func(el maps_model.MapElem)) func() {
-	return m.onClosed.AddSlot(listener)
-}
-
-func (m *DocTabsWidget) AddOnSelectedListener(listener func(el maps_model.MapElem)) func() {
-	return m.onSelected.AddSlot(listener)
+	return tabItem.Content.(*map_widget.MapWidget)
 }

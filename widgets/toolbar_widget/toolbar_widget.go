@@ -1,4 +1,4 @@
-package toolbar
+package toolbar_widget
 
 import (
 	"compress/gzip"
@@ -15,6 +15,8 @@ import (
 	"old-school-rpg-map-editor/models/rot_select_model"
 	"old-school-rpg-map-editor/models/rotate_model"
 	"old-school-rpg-map-editor/models/select_model"
+	"old-school-rpg-map-editor/models/selected_layer_model"
+	"old-school-rpg-map-editor/models/selected_map_tab_model"
 	"old-school-rpg-map-editor/undo_redo"
 	"old-school-rpg-map-editor/utils"
 	"old-school-rpg-map-editor/widgets/doc_tabs_widget"
@@ -30,7 +32,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type Toolbar struct {
+type ToolbarWidget struct {
 	widget.Toolbar
 
 	mapsModel *maps_model.MapsModel
@@ -52,8 +54,8 @@ type Toolbar struct {
 	disconnect   utils.Signal0
 }
 
-func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.MapsModel, mapTabs *doc_tabs_widget.DocTabsWidget, copyModel *copy_model.CopyModel, rotateLeftIcon, rotateRightIcon, setModeIcon, setModeSelectedIcon, selectModeIcon, selectModeSelectedIcon, moveModeIcon, moveModeSelectedIcon fyne.Resource) *Toolbar {
-	w := &Toolbar{
+func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.MapsModel, selectedMapTabModel *selected_map_tab_model.SelectedMapTabModel, copyModel *copy_model.CopyModel, rotateLeftIcon, rotateRightIcon, setModeIcon, setModeSelectedIcon, selectModeIcon, selectModeSelectedIcon, moveModeIcon, moveModeSelectedIcon fyne.Resource) *ToolbarWidget {
+	w := &ToolbarWidget{
 		Toolbar:      widget.Toolbar{},
 		mapsModel:    mapsModel,
 		currentMapId: uuid.UUID{},
@@ -62,8 +64,10 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 	newFile := toolbar_action.NewToolbarAction(theme.FileIcon(), func() {
 		mapModel := map_model.NewMapModel()
 
-		moveLayerIndex := mapModel.AddLayerWithId(uuid.New(), map_model.MoveLayerType)
-		mapModel.SetName(moveLayerIndex, "MOVE")
+		/*
+			moveLayerIndex := mapModel.AddLayerWithId(uuid.New(), map_model.MoveLayerType)
+			mapModel.SetName(moveLayerIndex, "MOVE")
+		*/
 
 		layerIndex := mapModel.AddLayerWithId(uuid.New(), map_model.RegularLayerType)
 		mapModel.SetName(layerIndex, "Layer1")
@@ -74,8 +78,9 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 		rotSelectModel := rot_select_model.NewRotSelectModel(selectModel, rotateModel)
 		notesModel := notes_model.NewNotesModel(8, fnt)
 		undoRedoQueue := undo_redo.NewUndoRedoQueue(100 /*TODO*/)
+		selectedLayerModel := selected_layer_model.NewSelectedLayerModel()
 
-		mapsModel.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, "")
+		mapsModel.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, selectedLayerModel, "")
 	})
 
 	openFile := toolbar_action.NewToolbarAction(theme.FolderOpenIcon(), func() {
@@ -106,8 +111,9 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 			rotMapModel := rot_map_model.NewRotMapMode(mapModel, rotateModel)
 			rotSelectModel := rot_select_model.NewRotSelectModel(selectModel, rotateModel)
 			undoRedoQueue := undo_redo.NewUndoRedoQueue(100 /*TODO*/)
+			selectedLayerModel := selected_layer_model.NewSelectedLayerModel()
 
-			mapsModel.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, uc.URI().Path())
+			mapsModel.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, selectedLayerModel, uc.URI().Path())
 		}, window)
 		d.SetFilter(storage.NewExtensionFileFilter([]string{".map"}))
 		d.Resize(window.Canvas().Size())
@@ -134,7 +140,7 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 				NotesModel *notes_model.NotesModel `json:"notes"`
 			}
 
-			mapElem := mapTabs.Selected()
+			mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 			t.Version = 1
 			t.MapModel = mapElem.Model
 			t.NotesModel = mapElem.NotesModel
@@ -165,20 +171,20 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 	})
 
 	w.setModeToolbarAction = mode_toolbar_action.NewModeToolbarAction(setModeIcon, setModeSelectedIcon, mode_model.SetMode, func(mm *mode_model.ModeModel, m mode_model.Mode) {
-		mapElem := mapTabs.Selected()
+		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 		SetMode(mapsModel, mapElem.MapId, mode_model.SetMode)
 	})
 	w.selectModeToolbarAction = mode_toolbar_action.NewModeToolbarAction(selectModeIcon, selectModeSelectedIcon, mode_model.SelectMode, func(mm *mode_model.ModeModel, m mode_model.Mode) {
-		mapElem := mapTabs.Selected()
+		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 		SetMode(mapsModel, mapElem.MapId, mode_model.SelectMode)
 	})
 	w.moveModeToolbarAction = mode_toolbar_action.NewModeToolbarAction(moveModeIcon, moveModeSelectedIcon, mode_model.MoveMode, func(mm *mode_model.ModeModel, m mode_model.Mode) {
-		mapElem := mapTabs.Selected()
+		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 		SetMode(mapsModel, mapElem.MapId, mode_model.MoveMode)
 	})
 
 	w.rotateLeft = toolbar_action.NewToolbarAction(rotateLeftIcon, func() {
-		mapElem := mapTabs.Selected()
+		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 		_, err := common.MakeAction(undo_redo.NewRotateCounterclockwiseAction(), mapsModel, mapElem.MapId, false)
 		if err != nil {
 			// TODO
@@ -188,7 +194,7 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 	})
 
 	w.rotateRight = toolbar_action.NewToolbarAction(rotateRightIcon, func() {
-		mapElem := mapTabs.Selected()
+		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 		_, err := common.MakeAction(undo_redo.NewRotateClockwiseAction(), mapsModel, mapElem.MapId, false)
 		if err != nil {
 			// TODO
@@ -198,14 +204,14 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 	})
 
 	w.undo = toolbar_action.NewToolbarAction(theme.ContentUndoIcon(), func() {
-		Undo(mapTabs, mapsModel)
+		Undo(selectedMapTabModel, mapsModel)
 	})
 	w.redo = toolbar_action.NewToolbarAction(theme.ContentRedoIcon(), func() {
-		Redo(mapTabs, mapsModel)
+		Redo(selectedMapTabModel, mapsModel)
 	})
 
 	w.cut = toolbar_action.NewToolbarAction(theme.ContentCutIcon(), func() {
-		mapElem := mapTabs.Selected()
+		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 		copyResult := Copy(mapElem.Model, mapElem.RotateModel, mapElem.RotSelectModel, mapElem.RotMapModel)
 		copyModel.SetCopyResult(copyResult)
 		_, err := common.MakeAction(undo_redo.NewCutAction(copyResult), mapsModel, mapElem.MapId, false)
@@ -216,26 +222,24 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 		}
 	})
 	w.copy = toolbar_action.NewToolbarAction(theme.ContentCopyIcon(), func() {
-		mapElem := mapTabs.Selected()
+		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 		copyModel.SetCopyResult(Copy(mapElem.Model, mapElem.RotateModel, mapElem.RotSelectModel, mapElem.RotMapModel))
 	})
 	w.paste = toolbar_action.NewToolbarAction(theme.ContentPasteIcon(), func() {
-		mapElem := mapTabs.Selected()
-		moveLayerIndex := mapElem.Model.LayerIndexByName("MOVE", map_model.MoveLayerType)
-		moveLayerId := mapElem.Model.LayerInfo(moveLayerIndex).Uuid
+		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 
 		if copyModel.IsEmpty() {
 			return
 		}
 
-		_, err := common.MakeAction(undo_redo.NewMoveFromSelectModelAction(moveLayerId, mode_model.MoveMode), mapsModel, mapElem.MapId, false)
+		_, err := common.MakeAction(undo_redo.NewSetModeAndMergeDownMoveLayerAction(mode_model.MoveMode), mapsModel, mapElem.MapId, false)
 		if err != nil {
 			// TODO
 			fmt.Println(err)
 			return
 		}
 
-		mapWidget := mapTabs.MapWidget()
+		mapWidget := doc_tabs_widget.GetMapWidget(mapElem.ExternalData)
 
 		copyResult := copyModel.CopyResult()
 
@@ -252,7 +256,7 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 			}
 		}
 
-		_, err = common.MakeAction(undo_redo.NewPasteToMoveLayerAction(pastePos, copyResult, moveLayerId), mapsModel, mapElem.MapId, false)
+		_, err = common.MakeAction(undo_redo.NewPasteToMoveLayerAction(pastePos, copyResult), mapsModel, mapElem.MapId, false)
 		if err != nil {
 			// TODO
 			fmt.Println(err)
@@ -294,15 +298,14 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 	}
 	disableButtons()
 
-	mapTabs.AddOnClosedListener(func(mapElem maps_model.MapElem) {
-		if w.setModeToolbarAction.ModeModel() == mapElem.ModeModel {
+	selectedMapTabModel.AddDataChangeListener(func() {
+		if mapsModel.Length() == 0 {
 			w.setMapElem(maps_model.MapElem{})
-		}
-	})
-
-	mapTabs.AddOnSelectedListener(func(mapElem maps_model.MapElem) {
-		if (mapElem.MapId != uuid.UUID{}) {
-			w.setMapElem(mapElem)
+		} else {
+			mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
+			if (mapElem.MapId != uuid.UUID{}) {
+				w.setMapElem(mapElem)
+			}
 		}
 	})
 
@@ -321,19 +324,19 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 	return w
 }
 
-func (w *Toolbar) setMapElem(mapElem maps_model.MapElem) {
+func (w *ToolbarWidget) setMapElem(mapElem maps_model.MapElem) {
 	if mapElem.MapId == w.currentMapId {
 		return
 	}
 
-	if w.currentMapId != (uuid.UUID{}) {
+	if (w.currentMapId != uuid.UUID{}) {
 		w.disconnect.Emit()
 		w.disconnect.Clear()
 	}
 
 	w.currentMapId = mapElem.MapId
 
-	if mapElem.MapId == (uuid.UUID{}) {
+	if (mapElem.MapId == uuid.UUID{}) {
 		w.setModeToolbarAction.SetModeModel(nil)
 		w.selectModeToolbarAction.SetModeModel(nil)
 		w.moveModeToolbarAction.SetModeModel(nil)
@@ -358,32 +361,21 @@ func (w *Toolbar) setMapElem(mapElem maps_model.MapElem) {
 
 		w.moveModeToolbarAction.SetModeModel(mapElem.ModeModel)
 
-		rotMapModelChangeListener := func() {
-			leftTop, rightBottom := mapElem.RotSelectModel.Bounds()
+		mapModelDataChangeListener := func() {
+			hasMoveLayer := len(mapElem.Model.LayerIndexByType(map_model.MoveLayerType)) > 0
 
-			if leftTop != rightBottom {
+			if hasMoveLayer {
 				w.moveModeToolbarAction.ToolbarObject().(*widget.Button).Enable()
-
-				moveLayerIndex := mapElem.Model.LayerIndexByName("MOVE", map_model.MoveLayerType)
-
-				leftTop, rightBottom := mapElem.Model.Bounds(moveLayerIndex)
-
-				// отключаем copy/paste если мы перемещаем поля
-				if leftTop == rightBottom {
-					w.copy.ToolbarObject().(*widget.Button).Enable()
-					w.cut.ToolbarObject().(*widget.Button).Enable()
-				} else {
-					w.copy.ToolbarObject().(*widget.Button).Disable()
-					w.cut.ToolbarObject().(*widget.Button).Disable()
-				}
-			} else {
-				w.moveModeToolbarAction.ToolbarObject().(*widget.Button).Disable()
 				w.copy.ToolbarObject().(*widget.Button).Disable()
 				w.cut.ToolbarObject().(*widget.Button).Disable()
+			} else {
+				w.moveModeToolbarAction.ToolbarObject().(*widget.Button).Disable()
+				w.copy.ToolbarObject().(*widget.Button).Enable()
+				w.cut.ToolbarObject().(*widget.Button).Enable()
 			}
 		}
-		w.disconnect.AddSlot(mapElem.RotSelectModel.AddDataChangeListener(rotMapModelChangeListener))
-		rotMapModelChangeListener()
+		w.disconnect.AddSlot(mapElem.Model.AddDataChangeListener(mapModelDataChangeListener))
+		mapModelDataChangeListener()
 
 		saveChangeGenerationListener := func(mapElem maps_model.MapElem) {
 			if len(mapElem.FilePath) == 0 || mapElem.SavedChangeGeneration != mapElem.ChangeGeneration {
@@ -394,7 +386,7 @@ func (w *Toolbar) setMapElem(mapElem maps_model.MapElem) {
 		}
 		w.disconnect.AddSlot(w.mapsModel.AddDataChangeListener(func() {
 			mapElem := w.mapsModel.GetById(w.currentMapId)
-			if mapElem.MapId != (uuid.UUID{}) {
+			if (mapElem.MapId != uuid.UUID{}) {
 				saveChangeGenerationListener(mapElem)
 
 				if mapElem.UndoRedoQueue.Action(mapElem.ChangeGeneration) == (undo_redo.UndoRedoElement{}) {
@@ -417,21 +409,21 @@ func (w *Toolbar) setMapElem(mapElem maps_model.MapElem) {
 	}
 }
 
-func Undo(mapTabs *doc_tabs_widget.DocTabsWidget, mapsModel *maps_model.MapsModel) {
-	mapElem := mapTabs.Selected()
+func Undo(selectedMapTabModel *selected_map_tab_model.SelectedMapTabModel, mapsModel *maps_model.MapsModel) {
+	mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 	action := mapElem.UndoRedoQueue.Action(mapElem.ChangeGeneration)
 	if action.Action != nil {
-		action.Action.Undo(undo_redo.NewUndoRedoActionModels(mapElem.Model, mapElem.RotateModel, mapElem.RotMapModel, mapElem.RotSelectModel, mapElem.SelectModel, mapElem.ModeModel))
+		action.Action.Undo(undo_redo.NewUndoRedoActionModels(mapElem.Model, mapElem.RotateModel, mapElem.RotMapModel, mapElem.RotSelectModel, mapElem.SelectModel, mapElem.ModeModel, mapElem.SelectedLayerModel))
 		actionBefore := mapElem.UndoRedoQueue.ActionBefore(mapElem.ChangeGeneration)
 		mapsModel.SetChangeGeneration(mapElem.MapId, actionBefore.ChangeGeneration)
 	}
 }
 
-func Redo(mapTabs *doc_tabs_widget.DocTabsWidget, mapsModel *maps_model.MapsModel) {
-	mapElem := mapTabs.Selected()
+func Redo(selectedMapTabModel *selected_map_tab_model.SelectedMapTabModel, mapsModel *maps_model.MapsModel) {
+	mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 	actionAfter := mapElem.UndoRedoQueue.ActionAfter(mapElem.ChangeGeneration)
 	if actionAfter.Action != nil {
-		actionAfter.Action.Redo(undo_redo.NewUndoRedoActionModels(mapElem.Model, mapElem.RotateModel, mapElem.RotMapModel, mapElem.RotSelectModel, mapElem.SelectModel, mapElem.ModeModel))
+		actionAfter.Action.Redo(undo_redo.NewUndoRedoActionModels(mapElem.Model, mapElem.RotateModel, mapElem.RotMapModel, mapElem.RotSelectModel, mapElem.SelectModel, mapElem.ModeModel, mapElem.SelectedLayerModel))
 		mapsModel.SetChangeGeneration(mapElem.MapId, actionAfter.ChangeGeneration)
 	}
 }
@@ -440,11 +432,8 @@ func SetMode(mapsModel *maps_model.MapsModel, mapId uuid.UUID, mode mode_model.M
 	mapElem := mapsModel.GetById(mapId)
 
 	if mode == mode_model.SetMode || mode == mode_model.SelectMode {
-		locations := mapElem.Model
-		moveLayerIndex := locations.LayerIndexByName("MOVE", map_model.MoveLayerType)
-
 		if mapElem.ModeModel.Mode() != mode {
-			_, err := common.MakeAction(undo_redo.NewMoveFromSelectModelAction(locations.LayerInfo(moveLayerIndex).Uuid, mode), mapsModel, mapElem.MapId, false)
+			_, err := common.MakeAction(undo_redo.NewSetModeAndMergeDownMoveLayerAction(mode), mapsModel, mapElem.MapId, false)
 			if err != nil {
 				// TODO
 				fmt.Println(err)
@@ -452,24 +441,26 @@ func SetMode(mapsModel *maps_model.MapsModel, mapId uuid.UUID, mode mode_model.M
 			}
 		}
 	} else if mode == mode_model.MoveMode {
-		modeModel := mapElem.ModeModel
-		locations := mapElem.Model
-		moveLayerIndex := locations.LayerIndexByName("MOVE", map_model.MoveLayerType)
+		/*
+			modeModel := mapElem.ModeModel
+			locations := mapElem.Model
+			moveLayerIndex := pie.FirstOr(locations.LayerIndexByType(map_model.MoveLayerType), -1)
 
-		if modeModel.Mode() != mode_model.MoveMode {
-			_, err := common.MakeAction(undo_redo.NewMoveToSelectModelAction(locations.LayerInfo(moveLayerIndex).Uuid), mapsModel, mapElem.MapId, false)
-			if err != nil {
-				// TODO
-				fmt.Println(err)
-				return
+			if modeModel.Mode() != mode_model.MoveMode {
+				_, err := common.MakeAction(undo_redo.NewMoveToSelectModelAction(locations.LayerInfo(moveLayerIndex).Uuid), mapsModel, mapElem.MapId, false)
+				if err != nil {
+					// TODO
+					fmt.Println(err)
+					return
+				}
 			}
-		}
+		*/
 	}
 }
 
 func Copy(m *map_model.MapModel, r *rotate_model.RotateModel, rS *rot_select_model.RotSelectModel, rM *rot_map_model.RotMapModel) copy_model.CopyResult {
 	result := copy_model.CopyResult{}
-	result.Layers = make(map[uuid.UUID]copy_model.CopyResultLocations)
+	result.Locations = make(map[utils.Int2]map_model.Location)
 
 	leftTop, rightBottom := rS.Bounds()
 
@@ -478,41 +469,32 @@ func Copy(m *map_model.MapModel, r *rotate_model.RotateModel, rS *rot_select_mod
 			selected := rS.At(x, y)
 			tX, tY := r.TransformFromRot(x, y)
 
-			setLocation := func(layerIndex int32, f func(l *map_model.Location)) {
-				layerId := m.Layer(layerIndex).Uuid
-				layer := result.Layers[layerId]
-
-				var location map_model.Location
-				if layer.Locations != nil {
-					if l, exists := layer.Locations[utils.NewInt2(tX, tY)]; exists {
-						location = l
-					}
-				}
-
+			setLocation := func(f func(l *map_model.Location)) {
+				location := result.Locations[utils.NewInt2(tX, tY)]
 				f(&location)
+				result.Locations[utils.NewInt2(tX, tY)] = location
+			}
 
-				if layer.Locations == nil {
-					layer.Locations = make(map[utils.Int2]map_model.Location)
+			if selected.Floor {
+				if _, v := rM.VisibleFloor(x, y); v > 0 {
+					setLocation(func(l *map_model.Location) {
+						l.Floor = v
+					})
 				}
-
-				layer.Locations[utils.NewInt2(tX, tY)] = location
-				result.Layers[layerId] = layer
 			}
-
-			if layerIndex := m.LayerIndexById(selected.Floor); layerIndex != -1 {
-				setLocation(layerIndex, func(l *map_model.Location) {
-					l.Floor = rM.Floor(x, y, layerIndex)
-				})
+			if selected.RightWall {
+				if _, v := rM.VisibleWall(x, y, true); v > 0 {
+					setLocation(func(l *map_model.Location) {
+						l.RightWall = v
+					})
+				}
 			}
-			if layerIndex := m.LayerIndexById(selected.RightWall); layerIndex != -1 {
-				setLocation(layerIndex, func(l *map_model.Location) {
-					l.RightWall = rM.Wall(x, y, layerIndex, true)
-				})
-			}
-			if layerIndex := m.LayerIndexById(selected.BottomWall); layerIndex != -1 {
-				setLocation(layerIndex, func(l *map_model.Location) {
-					l.BottomWall = rM.Wall(x, y, layerIndex, false)
-				})
+			if selected.BottomWall {
+				if _, v := rM.VisibleWall(x, y, false); v > 0 {
+					setLocation(func(l *map_model.Location) {
+						l.BottomWall = v
+					})
+				}
 			}
 		}
 	}
