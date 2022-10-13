@@ -357,18 +357,32 @@ func (w *Toolbar) setMapElem(mapElem maps_model.MapElem) {
 		w.selectModeToolbarAction.SetModeModel(mapElem.ModeModel)
 		w.selectModeToolbarAction.ToolbarObject().(*widget.Button).Enable()
 
+		w.moveModeToolbarAction.SetModeModel(mapElem.ModeModel)
+
 		rotMapModelChangeListener := func() {
 			leftTop, rightBottom := mapElem.RotSelectModel.Bounds()
 
 			if leftTop != rightBottom {
 				w.moveModeToolbarAction.ToolbarObject().(*widget.Button).Enable()
-				w.copy.ToolbarObject().(*widget.Button).Enable()
+
+				moveLayerIndex := mapElem.Model.LayerIndexByName("MOVE", true)
+
+				leftTop, rightBottom := mapElem.Model.Bounds(moveLayerIndex)
+
+				// отключаем copy/paste если мы перемещаем поля
+				if leftTop == rightBottom {
+					w.copy.ToolbarObject().(*widget.Button).Enable()
+					w.cut.ToolbarObject().(*widget.Button).Enable()
+				} else {
+					w.copy.ToolbarObject().(*widget.Button).Disable()
+					w.cut.ToolbarObject().(*widget.Button).Disable()
+				}
 			} else {
 				w.moveModeToolbarAction.ToolbarObject().(*widget.Button).Disable()
 				w.copy.ToolbarObject().(*widget.Button).Disable()
+				w.cut.ToolbarObject().(*widget.Button).Disable()
 			}
 		}
-		w.moveModeToolbarAction.SetModeModel(mapElem.ModeModel)
 		w.disconnect.AddSlot(mapElem.RotSelectModel.AddDataChangeListener(rotMapModelChangeListener))
 		rotMapModelChangeListener()
 
