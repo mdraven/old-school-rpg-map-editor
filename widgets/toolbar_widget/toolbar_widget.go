@@ -433,7 +433,15 @@ func SetMode(mapsModel *maps_model.MapsModel, mapId uuid.UUID, mode mode_model.M
 
 	if mode == mode_model.SetMode || mode == mode_model.SelectMode {
 		if mapElem.ModeModel.Mode() != mode {
-			_, err := common.MakeAction(undo_redo.NewSetModeAndMergeDownMoveLayerAction(mode), mapsModel, mapElem.MapId, false)
+			actions := undo_redo.NewUndoRedoContainer()
+
+			unselectAllAction := undo_redo.NewUnselectAllAction()
+			unselectAllAction.AddTo(actions)
+
+			setModeAndMergeDownMoveLayerAction := undo_redo.NewSetModeAndMergeDownMoveLayerAction(mode)
+			setModeAndMergeDownMoveLayerAction.AddTo(actions)
+
+			_, err := common.MakeAction(actions, mapsModel, mapElem.MapId, false)
 			if err != nil {
 				// TODO
 				fmt.Println(err)
@@ -441,20 +449,7 @@ func SetMode(mapsModel *maps_model.MapsModel, mapId uuid.UUID, mode mode_model.M
 			}
 		}
 	} else if mode == mode_model.MoveMode {
-		/*
-			modeModel := mapElem.ModeModel
-			locations := mapElem.Model
-			moveLayerIndex := pie.FirstOr(locations.LayerIndexByType(map_model.MoveLayerType), -1)
 
-			if modeModel.Mode() != mode_model.MoveMode {
-				_, err := common.MakeAction(undo_redo.NewMoveToSelectModelAction(locations.LayerInfo(moveLayerIndex).Uuid), mapsModel, mapElem.MapId, false)
-				if err != nil {
-					// TODO
-					fmt.Println(err)
-					return
-				}
-			}
-		*/
 	}
 }
 

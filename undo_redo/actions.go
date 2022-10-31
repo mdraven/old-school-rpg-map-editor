@@ -617,6 +617,10 @@ func NewSetModeAndMergeDownMoveLayerAction(mode mode_model.Mode) *SetModeAndMerg
 	return &SetModeAndMergeDownMoveLayerAction{mode: mode, actions: NewUndoRedoContainer(reflect.TypeOf((*MergeLayersAction)(nil)), reflect.TypeOf((*ClearLayerAction)(nil)), reflect.TypeOf((*UnselectAllAction)(nil)), reflect.TypeOf((*SetModeAction)(nil)))}
 }
 
+func (a *SetModeAndMergeDownMoveLayerAction) AddTo(container *UndoRedoContainer) {
+	container.actions = append(container.actions, a)
+}
+
 func (a *SetModeAndMergeDownMoveLayerAction) Redo(m UndoRedoActionModels) {
 	if a.actions.Len() == 0 {
 		moveLayerIndex := pie.FirstOr(m.M.LayerIndexByType(map_model.MoveLayerType), -1)
