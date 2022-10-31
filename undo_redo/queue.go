@@ -25,7 +25,7 @@ func NewUndoRedoQueue(maxElements int) *UndoRedoQueue {
 	return &UndoRedoQueue{nextChangeGeneration: 1, maxElements: maxElements}
 }
 
-func (q *UndoRedoQueue) AddAction(currentChangeGeneration uint64, action UndoRedoAction, addToContainer bool) (changeGeneration uint64, err error) {
+func (q *UndoRedoQueue) AddAction(currentChangeGeneration uint64, action UndoRedoAction) (changeGeneration uint64, err error) {
 	if currentChangeGeneration > 0 {
 		index := slices.IndexFunc(q.actions, func(e UndoRedoElement) bool {
 			return e.ChangeGeneration == currentChangeGeneration
@@ -39,22 +39,7 @@ func (q *UndoRedoQueue) AddAction(currentChangeGeneration uint64, action UndoRed
 	changeGeneration = q.nextChangeGeneration
 	q.nextChangeGeneration++
 
-	commonAppend := true
-
-	if len(q.actions) > 0 && addToContainer {
-		prevAction := q.actions[len(q.actions)-1].Action
-		if container, ok := prevAction.(*UndoRedoContainer); ok {
-			if action, ok := action.(UndoRedoActionContainer); ok {
-				action.AddTo(container)
-				q.actions[len(q.actions)-1].ChangeGeneration = changeGeneration
-				commonAppend = false
-			}
-		}
-	}
-
-	if commonAppend {
-		q.actions = append(q.actions, UndoRedoElement{Action: action, ChangeGeneration: changeGeneration})
-	}
+	q.actions = append(q.actions, UndoRedoElement{Action: action, ChangeGeneration: changeGeneration})
 
 	removeOldFrom := utils.Max(0, len(q.actions)-q.maxElements)
 	if removeOldFrom != 0 {

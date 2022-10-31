@@ -185,7 +185,7 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 
 	w.rotateLeft = toolbar_action.NewToolbarAction(rotateLeftIcon, func() {
 		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
-		_, err := common.MakeAction(undo_redo.NewRotateCounterclockwiseAction(), mapsModel, mapElem.MapId, false)
+		err := common.MakeAction(undo_redo.NewRotateCounterclockwiseAction(), mapsModel, mapElem.MapId, nil)
 		if err != nil {
 			// TODO
 			fmt.Println(err)
@@ -195,7 +195,7 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 
 	w.rotateRight = toolbar_action.NewToolbarAction(rotateRightIcon, func() {
 		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
-		_, err := common.MakeAction(undo_redo.NewRotateClockwiseAction(), mapsModel, mapElem.MapId, false)
+		err := common.MakeAction(undo_redo.NewRotateClockwiseAction(), mapsModel, mapElem.MapId, nil)
 		if err != nil {
 			// TODO
 			fmt.Println(err)
@@ -214,7 +214,7 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 		copyResult := Copy(mapElem.Model, mapElem.RotateModel, mapElem.RotSelectModel, mapElem.RotMapModel)
 		copyModel.SetCopyResult(copyResult)
-		_, err := common.MakeAction(undo_redo.NewCutAction(copyResult), mapsModel, mapElem.MapId, false)
+		err := common.MakeAction(undo_redo.NewCutAction(copyResult), mapsModel, mapElem.MapId, nil)
 		if err != nil {
 			// TODO
 			fmt.Println(err)
@@ -232,7 +232,7 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 			return
 		}
 
-		_, err := common.MakeAction(undo_redo.NewSetModeAndMergeDownMoveLayerAction(mode_model.MoveMode), mapsModel, mapElem.MapId, false)
+		err := common.MakeAction(undo_redo.NewSetModeAndMergeDownMoveLayerAction(mode_model.MoveMode), mapsModel, mapElem.MapId, nil)
 		if err != nil {
 			// TODO
 			fmt.Println(err)
@@ -256,7 +256,7 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 			}
 		}
 
-		_, err = common.MakeAction(undo_redo.NewPasteToMoveLayerAction(pastePos, copyResult), mapsModel, mapElem.MapId, false)
+		err = common.MakeAction(undo_redo.NewPasteToMoveLayerAction(pastePos, copyResult), mapsModel, mapElem.MapId, nil)
 		if err != nil {
 			// TODO
 			fmt.Println(err)
@@ -436,12 +436,22 @@ func SetMode(mapsModel *maps_model.MapsModel, mapId uuid.UUID, mode mode_model.M
 			actions := undo_redo.NewUndoRedoContainer()
 
 			unselectAllAction := undo_redo.NewUnselectAllAction()
-			unselectAllAction.AddTo(actions)
+			err := common.MakeAction(unselectAllAction, mapsModel, mapElem.MapId, actions)
+			if err != nil {
+				// TODO
+				fmt.Println(err)
+				return
+			}
 
 			setModeAndMergeDownMoveLayerAction := undo_redo.NewSetModeAndMergeDownMoveLayerAction(mode)
-			setModeAndMergeDownMoveLayerAction.AddTo(actions)
+			err = common.MakeAction(setModeAndMergeDownMoveLayerAction, mapsModel, mapElem.MapId, actions)
+			if err != nil {
+				// TODO
+				fmt.Println(err)
+				return
+			}
 
-			_, err := common.MakeAction(actions, mapsModel, mapElem.MapId, false)
+			err = common.MakeAction(actions, mapsModel, mapElem.MapId, nil)
 			if err != nil {
 				// TODO
 				fmt.Println(err)

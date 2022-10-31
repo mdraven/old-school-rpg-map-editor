@@ -29,6 +29,14 @@ const (
 	MoveMode   Mode = 2 // перемещаем элементы из selected
 )
 
+type MoveSelectedToType int
+
+const (
+	BeginMoveSelectedTo  MoveSelectedToType = 0
+	DragMoveSelectedTo   MoveSelectedToType = 1
+	FinishMoveSelectedTo MoveSelectedToType = 2
+)
+
 type modeData interface {
 	getMode() Mode
 }
@@ -85,7 +93,7 @@ type MapWidget struct {
 	disconnectNotesModel   utils.Signal0
 	clickFloor             func(x, y int)
 	clickWall              func(x, y int, isRight bool /*or bottom*/)
-	moveSelectedTo         func(offsetX, offsetY int, startGrab bool)
+	moveSelectedTo         func(offsetX, offsetY int, moveType MoveSelectedToType)
 	selectArea             func(floors []utils.Int2, rightWall []utils.Int2, bottomWall []utils.Int2)
 	unselectAll            func()
 	isClickFloor           bool // обрабатывать click на floor или wall
@@ -95,7 +103,7 @@ type MapWidget struct {
 	draggedSecondary       draggedSecondary
 }
 
-func NewMapWidget(floorImage image.Image, wallImage image.Image, floorSelectedImage image.Image, wallSelectedImage image.Image, imageConfig configuration.ImageConfig, rotateModel *rotate_model.RotateModel, mapModel *rot_map_model.RotMapModel, selectModel *rot_select_model.RotSelectModel, modeModel *mode_model.ModeModel, notesModel *notes_model.NotesModel, clickFloor func(x, y int), clickWall func(x, y int, isRight bool), moveSelectedTo func(offsetX, offsetY int, startGrab bool), selectArea func(floors []utils.Int2, rightWall []utils.Int2, bottomWall []utils.Int2), unselectAll func()) *MapWidget {
+func NewMapWidget(floorImage image.Image, wallImage image.Image, floorSelectedImage image.Image, wallSelectedImage image.Image, imageConfig configuration.ImageConfig, rotateModel *rotate_model.RotateModel, mapModel *rot_map_model.RotMapModel, selectModel *rot_select_model.RotSelectModel, modeModel *mode_model.ModeModel, notesModel *notes_model.NotesModel, clickFloor func(x, y int), clickWall func(x, y int, isRight bool), moveSelectedTo func(offsetX, offsetY int, moveType MoveSelectedToType), selectArea func(floors []utils.Int2, rightWall []utils.Int2, bottomWall []utils.Int2), unselectAll func()) *MapWidget {
 	w := &MapWidget{
 		origFloorImage:         floorImage,
 		floorImage:             floorImage,
@@ -324,7 +332,7 @@ func (w *MapWidget) Dragged(ev *fyne.DragEvent) {
 				mode.begin = &int2
 
 				once.Do(w.mutex.Unlock)
-				w.moveSelectedTo(0, 0, true)
+				w.moveSelectedTo(0, 0, BeginMoveSelectedTo)
 			}
 
 			return
@@ -340,7 +348,7 @@ func (w *MapWidget) Dragged(ev *fyne.DragEvent) {
 			mode.begin.Y = mapY
 
 			once.Do(w.mutex.Unlock)
-			w.moveSelectedTo(offsetX, offsetY, false)
+			w.moveSelectedTo(offsetX, offsetY, DragMoveSelectedTo)
 		}
 	default:
 		panic(fmt.Sprintf("unknown map widget mode: %v", mode))
@@ -421,9 +429,9 @@ func (w *MapWidget) DragEnd() {
 			w.selectArea(floors, rightWalls, bottomWalls)
 		}
 	} else if modeData, ok := w.modeData.(*moveModeData); ok {
-		//once.Do(w.mutex.Unlock)
+		once.Do(w.mutex.Unlock)
 		modeData.begin = nil
-		//w.moveSelectedTo(0, 0, true)
+		w.moveSelectedTo(0, 0, FinishMoveSelectedTo)
 	}
 }
 

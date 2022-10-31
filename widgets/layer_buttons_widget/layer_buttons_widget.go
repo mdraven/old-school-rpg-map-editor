@@ -40,7 +40,7 @@ func NewLayerButtonsWidget(parent fyne.Window, mapsModel *maps_model.MapsModel, 
 	w.addLayerButtom = widget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
 		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 
-		_, err := common.MakeAction(undo_redo.NewAddLayerAction("Layer", true, map_model.RegularLayerType), w.mapsModel, mapElem.MapId, false)
+		err := common.MakeAction(undo_redo.NewAddLayerAction("Layer", true, map_model.RegularLayerType), w.mapsModel, mapElem.MapId, nil)
 		if err != nil {
 			// TODO
 			fmt.Println(err)
@@ -54,7 +54,7 @@ func NewLayerButtonsWidget(parent fyne.Window, mapsModel *maps_model.MapsModel, 
 		activeLayer := mapElem.SelectedLayerModel.Selected()
 		layerId := locations.LayerInfo(activeLayer).Uuid
 
-		_, err := common.MakeAction(undo_redo.NewDeleteLayerAction(layerId), w.mapsModel, mapElem.MapId, false)
+		err := common.MakeAction(undo_redo.NewDeleteLayerAction(layerId), w.mapsModel, mapElem.MapId, nil)
 		if err != nil {
 			// TODO
 			fmt.Println(err)
@@ -68,7 +68,7 @@ func NewLayerButtonsWidget(parent fyne.Window, mapsModel *maps_model.MapsModel, 
 		activeLayer := mapElem.SelectedLayerModel.Selected()
 		layerId := locations.LayerInfo(activeLayer).Uuid
 
-		_, err := common.MakeAction(undo_redo.NewMoveLayerAction(-1, layerId), w.mapsModel, mapElem.MapId, false)
+		err := common.MakeAction(undo_redo.NewMoveLayerAction(-1, layerId), w.mapsModel, mapElem.MapId, nil)
 		if err != nil {
 			// TODO
 			fmt.Println(err)
@@ -82,7 +82,7 @@ func NewLayerButtonsWidget(parent fyne.Window, mapsModel *maps_model.MapsModel, 
 		activeLayer := mapElem.SelectedLayerModel.Selected()
 		layerId := locations.LayerInfo(activeLayer).Uuid
 
-		_, err := common.MakeAction(undo_redo.NewMoveLayerAction(1, layerId), w.mapsModel, mapElem.MapId, false)
+		err := common.MakeAction(undo_redo.NewMoveLayerAction(1, layerId), w.mapsModel, mapElem.MapId, nil)
 		if err != nil {
 			// TODO
 			fmt.Println(err)

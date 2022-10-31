@@ -15,7 +15,6 @@ import (
 	"old-school-rpg-map-editor/widgets/notes_widget"
 	"old-school-rpg-map-editor/widgets/palette_widget"
 	"path/filepath"
-	"reflect"
 
 	"fyne.io/fyne/v2/container"
 	"github.com/elliotchance/pie/v2"
@@ -27,6 +26,8 @@ func newMapWidget(mapsModel *maps_model.MapsModel, mapId uuid.UUID, isClickFloor
 	mapElem := mapsModel.GetById(mapId)
 	model := mapElem.Model
 	rotModel := mapElem.RotMapModel
+
+	var moveSelectedContainer *undo_redo.UndoRedoContainer
 
 	mapWidget := map_widget.NewMapWidget(floorImage, wallImage, floorSelectedImage, wallSelectedImage,
 		imageConfig, mapElem.RotateModel, mapElem.RotMapModel, mapElem.RotSelectModel, mapElem.ModeModel, mapElem.NotesModel, func(x, y int) {
@@ -44,7 +45,7 @@ func newMapWidget(mapsModel *maps_model.MapsModel, mapId uuid.UUID, isClickFloor
 					return
 				}
 
-				_, err := common.MakeAction(undo_redo.NewSetFloorAction(utils.NewInt2(x, y), layerId, value), mapsModel, mapId, false)
+				err := common.MakeAction(undo_redo.NewSetFloorAction(utils.NewInt2(x, y), layerId, value), mapsModel, mapId, nil)
 				if err != nil {
 					// TODO
 					fmt.Println(err)
@@ -59,7 +60,7 @@ func newMapWidget(mapsModel *maps_model.MapsModel, mapId uuid.UUID, isClickFloor
 					return
 				}
 
-				_, err := common.MakeAction(undo_redo.NewSetNoteIdAction(utils.NewInt2(x, y), layerId, value), mapsModel, mapId, false)
+				err := common.MakeAction(undo_redo.NewSetNoteIdAction(utils.NewInt2(x, y), layerId, value), mapsModel, mapId, nil)
 				if err != nil {
 					// TODO
 					fmt.Println(err)
@@ -78,30 +79,34 @@ func newMapWidget(mapsModel *maps_model.MapsModel, mapId uuid.UUID, isClickFloor
 				}
 			}
 
-			_, err := common.MakeAction(undo_redo.NewSetWallAction(utils.NewInt2(x, y), layerId, isRight, value), mapsModel, mapId, false)
+			err := common.MakeAction(undo_redo.NewSetWallAction(utils.NewInt2(x, y), layerId, isRight, value), mapsModel, mapId, nil)
 			if err != nil {
 				// TODO
 				fmt.Println(err)
 				return
 			}
-		}, func(offsetX, offsetY int, startDrag bool) {
-			if startDrag {
-				_, err := common.MakeAction(undo_redo.NewUndoRedoContainer(reflect.TypeOf((*undo_redo.MoveToSelectedAction)(nil))), mapsModel, mapId, false)
-				if err != nil {
-					// TODO
-					fmt.Println(err)
-					return
-				}
+		}, func(offsetX, offsetY int, moveType map_widget.MoveSelectedToType) {
+			if moveType == map_widget.BeginMoveSelectedTo {
+				moveSelectedContainer = undo_redo.NewUndoRedoContainer()
 			}
 
 			moveLayerIndex := pie.FirstOr(mapElem.Model.LayerIndexByType(map_model.MoveLayerType), -1)
 			moveLayerId := mapElem.Model.LayerInfo(moveLayerIndex).Uuid
 
-			_, err := common.MakeAction(undo_redo.NewMoveToSelectedAction(moveLayerId, utils.NewInt2(offsetX, offsetY)), mapsModel, mapId, true)
+			err := common.MakeAction(undo_redo.NewMoveToSelectedAction(moveLayerId, utils.NewInt2(offsetX, offsetY)), mapsModel, mapId, moveSelectedContainer)
 			if err != nil {
 				// TODO
 				fmt.Println(err)
 				return
+			}
+
+			if moveType == map_widget.FinishMoveSelectedTo {
+				err := common.MakeAction(moveSelectedContainer, mapsModel, mapId, nil)
+				if err != nil {
+					// TODO
+					fmt.Println(err)
+					return
+				}
 			}
 		}, func(floors, rightWalls, bottomWalls []utils.Int2) {
 			floors = pie.Filter(floors, func(pos utils.Int2) bool {
@@ -118,15 +123,10 @@ func newMapWidget(mapsModel *maps_model.MapsModel, mapId uuid.UUID, isClickFloor
 				return
 			}
 
-			_, err := common.MakeAction(undo_redo.NewUndoRedoContainer(reflect.TypeOf((*undo_redo.SelectAction)(nil))), mapsModel, mapId, false)
-			if err != nil {
-				// TODO
-				fmt.Println(err)
-				return
-			}
+			actions := undo_redo.NewUndoRedoContainer()
 
 			addNewAction := func(pos utils.Int2, selectType undo_redo.SelectType) {
-				_, err := common.MakeAction(undo_redo.NewSelectAction(pos, selectType), mapsModel, mapId, true)
+				err := common.MakeAction(undo_redo.NewSelectAction(pos, selectType), mapsModel, mapId, actions)
 				if err != nil {
 					// TODO
 					fmt.Println(err)
@@ -145,11 +145,18 @@ func newMapWidget(mapsModel *maps_model.MapsModel, mapId uuid.UUID, isClickFloor
 			for _, pos := range bottomWalls {
 				addNewAction(pos, undo_redo.BottomWall)
 			}
+
+			err := common.MakeAction(actions, mapsModel, mapId, nil)
+			if err != nil {
+				// TODO
+				fmt.Println(err)
+				return
+			}
 		}, func() {
 			leftTop, rightBottom := mapElem.SelectModel.Bounds()
 
 			if leftTop != rightBottom {
-				_, err := common.MakeAction(undo_redo.NewUnselectAllAction(), mapsModel, mapId, false)
+				err := common.MakeAction(undo_redo.NewUnselectAllAction(), mapsModel, mapId, nil)
 				if err != nil {
 					// TODO
 					fmt.Println(err)
