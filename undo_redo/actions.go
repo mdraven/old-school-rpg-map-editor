@@ -805,6 +805,10 @@ func NewPasteToMoveLayerAction(pos utils.Int2, copyResult copy_model.CopyResult)
 	}
 }
 
+func (a *PasteToMoveLayerAction) AddTo(container *UndoRedoContainer) {
+	container.actions = append(container.actions, a)
+}
+
 func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 	if a.actions.Len() == 0 {
 		leftTop, rightBottom := a.copyResult.Bounds()

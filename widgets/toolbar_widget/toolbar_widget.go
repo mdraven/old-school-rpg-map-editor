@@ -232,7 +232,9 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 			return
 		}
 
-		err := common.MakeAction(undo_redo.NewSetModeAndMergeDownMoveLayerAction(mode_model.MoveMode), mapsModel, mapElem.MapId, nil)
+		actions := undo_redo.NewUndoRedoContainer()
+
+		err := common.MakeAction(undo_redo.NewSetModeAndMergeDownMoveLayerAction(mode_model.MoveMode), mapsModel, mapElem.MapId, actions)
 		if err != nil {
 			// TODO
 			fmt.Println(err)
@@ -256,7 +258,14 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 			}
 		}
 
-		err = common.MakeAction(undo_redo.NewPasteToMoveLayerAction(pastePos, copyResult), mapsModel, mapElem.MapId, nil)
+		err = common.MakeAction(undo_redo.NewPasteToMoveLayerAction(pastePos, copyResult), mapsModel, mapElem.MapId, actions)
+		if err != nil {
+			// TODO
+			fmt.Println(err)
+			return
+		}
+
+		err = common.MakeAction(actions, mapsModel, mapElem.MapId, nil)
 		if err != nil {
 			// TODO
 			fmt.Println(err)
