@@ -65,6 +65,12 @@ func NewLayersWidget(visibleIcon, invisibleIcon fyne.Resource) *LayersWidget {
 
 	w.List.OnSelected = func(id widget.ListItemID) {
 		if w.selectedLayerModel != nil {
+			if w.mapModel != nil {
+				indices := w.mapModel.LayerIndexByType(map_model.MoveLayerType)
+				if len(indices) > 0 {
+					id = int(indices[0])
+				}
+			}
 			w.selectedLayerModel.SetSelected(int32(id))
 		}
 	}
