@@ -89,12 +89,12 @@ func (m *MapsModel) UnmarshalJSON(d []byte) error {
 
 		notesModel.SetFont(m.fontSize, m.fnt)
 
+		selectedLayerModel := selected_layer_model.NewSelectedLayerModel()
 		rotateModel := rotate_model.NewRotateModel(0)
-		selectModel := select_model.NewSelectModel(mapModel)
+		selectModel := select_model.NewSelectModel(mapModel, selectedLayerModel)
 		rotMapModel := rot_map_model.NewRotMapMode(mapModel, rotateModel)
 		rotSelectModel := rot_select_model.NewRotSelectModel(selectModel, rotateModel)
 		undoRedoQueue := undo_redo.NewUndoRedoQueue(100 /*TODO*/)
-		selectedLayerModel := selected_layer_model.NewSelectedLayerModel()
 
 		m.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, selectedLayerModel, file)
 	}

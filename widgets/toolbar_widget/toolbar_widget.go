@@ -72,13 +72,13 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 		layerIndex := mapModel.AddLayerWithId(uuid.New(), map_model.RegularLayerType)
 		mapModel.SetName(layerIndex, "Layer1")
 
+		selectedLayerModel := selected_layer_model.NewSelectedLayerModel()
 		rotateModel := rotate_model.NewRotateModel(0)
 		rotMapModel := rot_map_model.NewRotMapMode(mapModel, rotateModel)
-		selectModel := select_model.NewSelectModel(mapModel)
+		selectModel := select_model.NewSelectModel(mapModel, selectedLayerModel)
 		rotSelectModel := rot_select_model.NewRotSelectModel(selectModel, rotateModel)
 		notesModel := notes_model.NewNotesModel(8, fnt)
 		undoRedoQueue := undo_redo.NewUndoRedoQueue(100 /*TODO*/)
-		selectedLayerModel := selected_layer_model.NewSelectedLayerModel()
 
 		mapsModel.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, selectedLayerModel, "")
 	})
@@ -106,12 +106,12 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 
 			notesModel.SetFont(8, fnt)
 
+			selectedLayerModel := selected_layer_model.NewSelectedLayerModel()
 			rotateModel := rotate_model.NewRotateModel(0)
-			selectModel := select_model.NewSelectModel(mapModel)
+			selectModel := select_model.NewSelectModel(mapModel, selectedLayerModel)
 			rotMapModel := rot_map_model.NewRotMapMode(mapModel, rotateModel)
 			rotSelectModel := rot_select_model.NewRotSelectModel(selectModel, rotateModel)
 			undoRedoQueue := undo_redo.NewUndoRedoQueue(100 /*TODO*/)
-			selectedLayerModel := selected_layer_model.NewSelectedLayerModel()
 
 			mapsModel.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, selectedLayerModel, uc.URI().Path())
 		}, window)
@@ -212,7 +212,7 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 
 	w.cut = toolbar_action.NewToolbarAction(theme.ContentCutIcon(), func() {
 		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
-		copyResult := Copy(mapElem.Model, mapElem.RotateModel, mapElem.RotSelectModel, mapElem.RotMapModel)
+		copyResult := Copy(mapElem.Model, mapElem.SelectedLayerModel, mapElem.RotateModel, mapElem.RotSelectModel, mapElem.RotMapModel)
 		copyModel.SetCopyResult(copyResult)
 		err := common.MakeAction(undo_redo.NewCutAction(copyResult), mapsModel, mapElem.MapId, nil)
 		if err != nil {
@@ -223,7 +223,7 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 	})
 	w.copy = toolbar_action.NewToolbarAction(theme.ContentCopyIcon(), func() {
 		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
-		copyModel.SetCopyResult(Copy(mapElem.Model, mapElem.RotateModel, mapElem.RotSelectModel, mapElem.RotMapModel))
+		copyModel.SetCopyResult(Copy(mapElem.Model, mapElem.SelectedLayerModel, mapElem.RotateModel, mapElem.RotSelectModel, mapElem.RotMapModel))
 	})
 	w.paste = toolbar_action.NewToolbarAction(theme.ContentPasteIcon(), func() {
 		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
@@ -472,9 +472,10 @@ func SetMode(mapsModel *maps_model.MapsModel, mapId uuid.UUID, mode mode_model.M
 	}
 }
 
-func Copy(m *map_model.MapModel, r *rotate_model.RotateModel, rS *rot_select_model.RotSelectModel, rM *rot_map_model.RotMapModel) copy_model.CopyResult {
+func Copy(m *map_model.MapModel, slm *selected_layer_model.SelectedLayerModel, r *rotate_model.RotateModel, rS *rot_select_model.RotSelectModel, rM *rot_map_model.RotMapModel) copy_model.CopyResult {
 	result := copy_model.CopyResult{}
 	result.Locations = make(map[utils.Int2]map_model.Location)
+	result.LayerId = m.Layer(slm.Selected()).Uuid
 
 	leftTop, rightBottom := rS.Bounds()
 
@@ -490,21 +491,21 @@ func Copy(m *map_model.MapModel, r *rotate_model.RotateModel, rS *rot_select_mod
 			}
 
 			if selected.Floor {
-				if _, v := rM.VisibleFloor(x, y); v > 0 {
+				if v := rM.Floor(x, y, slm.Selected()); v > 0 {
 					setLocation(func(l *map_model.Location) {
 						l.Floor = v
 					})
 				}
 			}
 			if selected.RightWall {
-				if _, v := rM.VisibleWall(x, y, true); v > 0 {
+				if v := rM.Wall(x, y, slm.Selected(), true); v > 0 {
 					setLocation(func(l *map_model.Location) {
 						l.RightWall = v
 					})
 				}
 			}
 			if selected.BottomWall {
-				if _, v := rM.VisibleWall(x, y, false); v > 0 {
+				if v := rM.Wall(x, y, slm.Selected(), false); v > 0 {
 					setLocation(func(l *map_model.Location) {
 						l.BottomWall = v
 					})

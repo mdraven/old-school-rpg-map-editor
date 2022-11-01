@@ -3,6 +3,7 @@ package select_model
 import (
 	"math"
 	"old-school-rpg-map-editor/models/map_model"
+	"old-school-rpg-map-editor/models/selected_layer_model"
 	"old-school-rpg-map-editor/utils"
 	"sync"
 
@@ -16,15 +17,20 @@ type Selected struct {
 }
 
 type SelectModel struct {
-	mutex    sync.Mutex
-	selected map[utils.Int2]Selected
-	mapModel *map_model.MapModel
+	mutex              sync.Mutex
+	selected           map[utils.Int2]Selected
+	mapModel           *map_model.MapModel
+	selectedLayerModel *selected_layer_model.SelectedLayerModel
 
 	listeners utils.Signal0 // listener'ы на изменение списка
 }
 
-func NewSelectModel(mapModel *map_model.MapModel) *SelectModel {
-	return &SelectModel{selected: make(map[utils.Int2]Selected), mapModel: mapModel}
+func NewSelectModel(mapModel *map_model.MapModel, selectedLayerModel *selected_layer_model.SelectedLayerModel) *SelectModel {
+	return &SelectModel{
+		selected:           make(map[utils.Int2]Selected),
+		mapModel:           mapModel,
+		selectedLayerModel: selectedLayerModel,
+	}
 }
 
 func (m *SelectModel) Clear() {
@@ -39,7 +45,7 @@ func (m *SelectModel) Clear() {
 }
 
 func (m *SelectModel) selectFloor(x int, y int) bool {
-	_, v := m.mapModel.VisibleFloor(x, y)
+	v := m.mapModel.Floor(x, y, m.selectedLayerModel.Selected())
 	if v > 0 {
 		pos := utils.NewInt2(x, y)
 
@@ -69,7 +75,7 @@ func (m *SelectModel) SelectFloor(x int, y int) {
 func (m *SelectModel) selectWall(x int, y int, isRight bool) bool {
 	pos := utils.NewInt2(x, y)
 
-	_, v := m.mapModel.VisibleWall(x, y, isRight)
+	v := m.mapModel.Wall(x, y, m.selectedLayerModel.Selected(), isRight)
 	if isRight {
 		if v > 0 {
 			selected := m.selected[pos]

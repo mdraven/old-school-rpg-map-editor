@@ -6,10 +6,12 @@ import (
 	"old-school-rpg-map-editor/utils"
 	"sync"
 
+	"github.com/google/uuid"
 	"golang.org/x/exp/maps"
 )
 
 type CopyResult struct {
+	LayerId   uuid.UUID
 	Locations map[utils.Int2]map_model.Location
 }
 
@@ -47,7 +49,7 @@ func (m *CopyResult) Bounds() (leftTop, rightBottom utils.Int2) {
 }
 
 func (r *CopyResult) Clone() CopyResult {
-	return CopyResult{Locations: maps.Clone(r.Locations)}
+	return CopyResult{LayerId: r.LayerId, Locations: maps.Clone(r.Locations)}
 }
 
 type CopyModel struct {
