@@ -399,7 +399,7 @@ type MergeLayersAction struct {
 }
 
 func NewMergeLayersAction(fromLayerId uuid.UUID, toLayerId uuid.UUID) *MergeLayersAction {
-	return &MergeLayersAction{fromLayerId: fromLayerId, toLayerId: toLayerId}
+	return &MergeLayersAction{fromLayerId: fromLayerId, toLayerId: toLayerId, actions: NewUndoRedoContainer()}
 }
 
 func (a *MergeLayersAction) AddTo(container *UndoRedoContainer) {
@@ -451,7 +451,7 @@ type MergeLayerDownAction struct {
 }
 
 func NewMergeLayerDownAction(fromLayerId uuid.UUID) *MergeLayerDownAction {
-	return &MergeLayerDownAction{fromLayerId: fromLayerId}
+	return &MergeLayerDownAction{fromLayerId: fromLayerId, actions: NewUndoRedoContainer()}
 }
 
 func (a *MergeLayerDownAction) AddTo(container *UndoRedoContainer) {
@@ -481,7 +481,7 @@ type SetModeAndMergeDownMoveLayerAction struct {
 }
 
 func NewSetModeAndMergeDownMoveLayerAction(mode mode_model.Mode) *SetModeAndMergeDownMoveLayerAction {
-	return &SetModeAndMergeDownMoveLayerAction{mode: mode}
+	return &SetModeAndMergeDownMoveLayerAction{mode: mode, actions: NewUndoRedoContainer()}
 }
 
 func (a *SetModeAndMergeDownMoveLayerAction) AddTo(container *UndoRedoContainer) {
@@ -574,7 +574,7 @@ type CutAction struct {
 }
 
 func NewCutAction(copyResult copy_model.CopyResult) *CutAction {
-	return &CutAction{copyResult: copyResult}
+	return &CutAction{copyResult: copyResult, actions: NewUndoRedoContainer()}
 }
 
 func (a *CutAction) Redo(m UndoRedoActionModels) {
@@ -624,6 +624,7 @@ func NewPasteToMoveLayerAction(pos utils.Int2, copyResult copy_model.CopyResult)
 	return &PasteToMoveLayerAction{
 		pos:        pos,
 		copyResult: copyResult,
+		actions:    NewUndoRedoContainer(),
 	}
 }
 
