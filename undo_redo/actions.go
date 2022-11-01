@@ -648,6 +648,9 @@ func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 		leftTop.X -= a.pos.X
 		leftTop.Y -= a.pos.Y
 
+		selectedLayerBefore := m.Slm.Selected()
+		selectedLayerIdBefore := m.M.Layer(selectedLayerBefore).Uuid
+
 		addPastedLayerAction := NewAddLayerAction("Pasted layer", true, map_model.MoveLayerType)
 		addPastedLayerAction.Redo(m)
 		addPastedLayerAction.AddTo(a.actions)
@@ -659,11 +662,13 @@ func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 		moveLayerIndex := moveLayersIndices[0]
 		moveLayerId := m.M.LayerInfo(moveLayerIndex).Uuid
 
-		moveUpAction := NewMoveLayerAction(int(m.Slm.Selected()-moveLayerIndex), moveLayerId)
+		selectedLayerAfter := m.M.LayerIndexById(selectedLayerIdBefore)
+
+		moveUpAction := NewMoveLayerAction(int(selectedLayerAfter-moveLayerIndex), moveLayerId)
 		moveUpAction.Redo(m)
 		moveUpAction.AddTo(a.actions)
 
-		m.Slm.SetSelected(m.Slm.Selected() - 1)
+		m.Slm.SetSelected(selectedLayerAfter)
 
 		selected := make(map[utils.Int2]select_model.Selected)
 
