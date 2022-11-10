@@ -7,11 +7,14 @@ import (
 	"image/draw"
 	"image/png"
 	"log"
+	"old-school-rpg-map-editor/common"
 	"old-school-rpg-map-editor/configuration"
 	"old-school-rpg-map-editor/models/copy_model"
 	"old-school-rpg-map-editor/models/maps_model"
 	"old-school-rpg-map-editor/models/mode_model"
 	"old-school-rpg-map-editor/models/selected_map_tab_model"
+	"old-school-rpg-map-editor/models/shortcuts_model"
+	"old-school-rpg-map-editor/undo_redo"
 	"old-school-rpg-map-editor/widgets/doc_tabs_widget"
 	"old-school-rpg-map-editor/widgets/layer_buttons_widget"
 	"old-school-rpg-map-editor/widgets/layers_widget"
@@ -19,6 +22,9 @@ import (
 	"old-school-rpg-map-editor/widgets/palette_widget"
 	"old-school-rpg-map-editor/widgets/toolbar_widget"
 	"os"
+	"reflect"
+	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -28,6 +34,7 @@ import (
 	"github.com/goki/freetype/truetype"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"golang.org/x/exp/maps"
 )
 
 func restoreMainWindowSettings(c *configuration.Config, w fyne.Window) {
@@ -95,6 +102,58 @@ func makeSelectedButtonIcon(border image.Image, res fyne.Resource) (fyne.Resourc
 	}
 
 	return fyne.NewStaticResource(fmt.Sprintf("%s.selected.png", res.Name()), buf.Bytes()), nil
+}
+
+func processKeymaps(keyMap map[string]struct{}, shortcutsModel *shortcuts_model.ShortcutsModel, mapsModel *maps_model.MapsModel, selectedMapTabModel *selected_map_tab_model.SelectedMapTabModel) {
+	for _, st := range shortcutsModel.Get(shortcuts_model.ShortcutFromMap(keyMap)) {
+		switch st {
+		case shortcuts_model.RotateMapClockwise, shortcuts_model.RotateMapCounterClockwise:
+			{
+				mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
+
+				var action undo_redo.UndoRedoAction
+				if st == shortcuts_model.RotateMapClockwise {
+					action = undo_redo.NewRotateClockwiseAction()
+				}
+				if st == shortcuts_model.RotateMapCounterClockwise {
+					action = undo_redo.NewRotateCounterclockwiseAction()
+				}
+
+				err := common.MakeAction(action, mapsModel, mapElem.MapId, reflect.TypeOf((*undo_redo.RotateMapContainer)(nil)))
+				if err != nil {
+					// TODO
+					fmt.Println(err)
+					return
+				}
+			}
+		case shortcuts_model.ScrollMapLeft, shortcuts_model.ScrollMapRight, shortcuts_model.ScrollMapUp, shortcuts_model.ScrollMapDown:
+			{
+				mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
+
+				center := mapElem.CenterModel.Get()
+
+				if st == shortcuts_model.ScrollMapLeft {
+					center.X -= 50
+				}
+				if st == shortcuts_model.ScrollMapRight {
+					center.X += 50
+				}
+				if st == shortcuts_model.ScrollMapUp {
+					center.Y -= 50
+				}
+				if st == shortcuts_model.ScrollMapDown {
+					center.Y += 50
+				}
+
+				err := common.MakeAction(undo_redo.NewSetCenterAction(center), mapsModel, mapElem.MapId, reflect.TypeOf((*undo_redo.SetCenterContainer)(nil)))
+				if err != nil {
+					// TODO
+					fmt.Println(err)
+					return
+				}
+			}
+		}
+	}
 }
 
 func main() {
@@ -212,6 +271,34 @@ func main() {
 
 	selectedMapTabModel := selected_map_tab_model.NewSelectedLayerModel()
 
+	shortcutsModel := shortcuts_model.NewShortcutsModel()
+
+	if deskCanvas, ok := w.Canvas().(desktop.Canvas); ok {
+		mutex := sync.Mutex{}
+		keyMap := make(map[string]struct{})
+
+		deskCanvas.SetOnKeyDown(func(ev *fyne.KeyEvent) {
+			mutex.Lock()
+			keyMap[string(ev.Name)] = struct{}{}
+			mutex.Unlock()
+		})
+		deskCanvas.SetOnKeyUp(func(ev *fyne.KeyEvent) {
+			mutex.Lock()
+			delete(keyMap, string(ev.Name))
+			mutex.Unlock()
+		})
+
+		go func() {
+			for range time.Tick(time.Millisecond * 150) {
+				mutex.Lock()
+				keyMap := maps.Clone(keyMap)
+				mutex.Unlock()
+
+				processKeymaps(keyMap, shortcutsModel, mapsModel, selectedMapTabModel)
+			}
+		}()
+	}
+
 	keyS := desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: fyne.KeyModifierControl}
 	w.Canvas().AddShortcut(&keyS, func(shortcut fyne.Shortcut) {
 		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
@@ -263,11 +350,13 @@ func main() {
 
 	paletteTabs.OnSelected = func(ti *container.TabItem) {
 		mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
-		mapWidget := doc_tabs_widget.GetMapWidget(mapElem.ExternalData)
-		if mapWidget == nil {
-			return
+		if (mapElem.MapId != uuid.UUID{}) {
+			mapWidget := doc_tabs_widget.GetMapWidget(mapElem.ExternalData)
+			if mapWidget == nil {
+				return
+			}
+			mapWidget.SetIsClickFloor(isFloorTabSelected())
 		}
-		mapWidget.SetIsClickFloor(isFloorTabSelected())
 	}
 
 	mapTabs := doc_tabs_widget.NewDocTabsWidget(mapsModel, selectedMapTabModel, floorPaletteWidget, wallPaletteWidget, notesWidget, paletteTabFloors, paletteTabNotes, paletteTabs, layersWidget, floorImage, wallImage, floorSelectedImage, wallSelectedImage, imageConfig)

@@ -3,6 +3,7 @@ package maps_model
 import (
 	"encoding/json"
 	"old-school-rpg-map-editor/common/load_save"
+	"old-school-rpg-map-editor/models/center_model"
 	"old-school-rpg-map-editor/models/map_model"
 	"old-school-rpg-map-editor/models/mode_model"
 	"old-school-rpg-map-editor/models/notes_model"
@@ -30,6 +31,7 @@ type MapElem struct {
 	NotesModel            *notes_model.NotesModel
 	UndoRedoQueue         *undo_redo.UndoRedoQueue
 	SelectedLayerModel    *selected_layer_model.SelectedLayerModel
+	CenterModel           *center_model.CenterModel
 	MapId                 uuid.UUID
 	FilePath              string // если пустой, то файла нет
 	ChangeGeneration      uint64 // используется чтобы определять был изменён файл или нет
@@ -55,6 +57,9 @@ func NewMapsModel(fontSize float64, fnt *truetype.Font) *MapsModel {
 }
 
 func (m *MapsModel) MarshalJSON() ([]byte, error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
 	t := struct {
 		OpenFiles []string `json:"open_files"`
 	}{OpenFiles: nil}
@@ -95,14 +100,15 @@ func (m *MapsModel) UnmarshalJSON(d []byte) error {
 		rotMapModel := rot_map_model.NewRotMapMode(mapModel, rotateModel)
 		rotSelectModel := rot_select_model.NewRotSelectModel(selectModel, rotateModel)
 		undoRedoQueue := undo_redo.NewUndoRedoQueue(100 /*TODO*/)
+		centerModel := center_model.NewCenterModel(utils.Int2{})
 
-		m.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, selectedLayerModel, file)
+		m.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, selectedLayerModel, centerModel, file)
 	}
 
 	return nil
 }
 
-func (m *MapsModel) Add(model *map_model.MapModel, selectModel *select_model.SelectModel, modeModel *mode_model.ModeModel, rotateModel *rotate_model.RotateModel, rotMapModel *rot_map_model.RotMapModel, rotSelectModel *rot_select_model.RotSelectModel, notesModel *notes_model.NotesModel, undoRedoQueue *undo_redo.UndoRedoQueue, selectedLayerModel *selected_layer_model.SelectedLayerModel, filePath string) (mapId uuid.UUID) {
+func (m *MapsModel) Add(model *map_model.MapModel, selectModel *select_model.SelectModel, modeModel *mode_model.ModeModel, rotateModel *rotate_model.RotateModel, rotMapModel *rot_map_model.RotMapModel, rotSelectModel *rot_select_model.RotSelectModel, notesModel *notes_model.NotesModel, undoRedoQueue *undo_redo.UndoRedoQueue, selectedLayerModel *selected_layer_model.SelectedLayerModel, centerModel *center_model.CenterModel, filePath string) (mapId uuid.UUID) {
 	listeners := func() utils.Signal0 {
 		m.mutex.Lock()
 		defer m.mutex.Unlock()
@@ -119,6 +125,7 @@ func (m *MapsModel) Add(model *map_model.MapModel, selectModel *select_model.Sel
 			NotesModel:         notesModel,
 			UndoRedoQueue:      undoRedoQueue,
 			SelectedLayerModel: selectedLayerModel,
+			CenterModel:        centerModel,
 			MapId:              mapId,
 			FilePath:           filePath,
 		}

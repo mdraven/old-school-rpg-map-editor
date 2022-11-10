@@ -1,6 +1,7 @@
 package undo_redo
 
 import (
+	"old-school-rpg-map-editor/models/center_model"
 	"old-school-rpg-map-editor/models/copy_model"
 	"old-school-rpg-map-editor/models/map_model"
 	"old-school-rpg-map-editor/models/mode_model"
@@ -10,9 +11,12 @@ import (
 	"old-school-rpg-map-editor/models/select_model"
 	"old-school-rpg-map-editor/models/selected_layer_model"
 	"old-school-rpg-map-editor/utils"
+	"reflect"
+	"sync"
 
 	"github.com/elliotchance/pie/v2"
 	"github.com/google/uuid"
+	"golang.org/x/exp/slices"
 )
 
 type UndoRedoActionModels struct {
@@ -23,9 +27,10 @@ type UndoRedoActionModels struct {
 	Sm  *select_model.SelectModel
 	Mm  *mode_model.ModeModel
 	Slm *selected_layer_model.SelectedLayerModel
+	Cm  *center_model.CenterModel
 }
 
-func NewUndoRedoActionModels(m *map_model.MapModel, r *rotate_model.RotateModel, rm *rot_map_model.RotMapModel, rs *rot_select_model.RotSelectModel, sm *select_model.SelectModel, mm *mode_model.ModeModel, slm *selected_layer_model.SelectedLayerModel) UndoRedoActionModels {
+func NewUndoRedoActionModels(m *map_model.MapModel, r *rotate_model.RotateModel, rm *rot_map_model.RotMapModel, rs *rot_select_model.RotSelectModel, sm *select_model.SelectModel, mm *mode_model.ModeModel, slm *selected_layer_model.SelectedLayerModel, cm *center_model.CenterModel) UndoRedoActionModels {
 	return UndoRedoActionModels{
 		M:   m,
 		R:   r,
@@ -34,41 +39,124 @@ func NewUndoRedoActionModels(m *map_model.MapModel, r *rotate_model.RotateModel,
 		Sm:  sm,
 		Mm:  mm,
 		Slm: slm,
+		Cm:  cm,
 	}
 }
 
 type UndoRedoAction interface {
 	Redo(m UndoRedoActionModels)
 	Undo(m UndoRedoActionModels)
+	//IsChangeSaveFile() bool
 }
 
 type UndoRedoActionContainer interface {
 	UndoRedoAction
-	AddTo(container *UndoRedoContainer)
+	Add(a UndoRedoAction) bool
+	Len() int
+	New() UndoRedoActionContainer
 }
 
+var _ UndoRedoActionContainer = &UndoRedoContainer{}
+
 type UndoRedoContainer struct {
-	actions []UndoRedoActionContainer
+	mutex   sync.Mutex
+	actions []UndoRedoAction
 }
 
 func NewUndoRedoContainer() *UndoRedoContainer {
 	return &UndoRedoContainer{}
 }
 
+func (*UndoRedoContainer) New() UndoRedoActionContainer {
+	return NewUndoRedoContainer()
+}
+
+func (c *UndoRedoContainer) Add(a UndoRedoAction) bool {
+	c.mutex.Lock()
+	c.actions = append(c.actions, a)
+	c.mutex.Unlock()
+
+	return true
+}
+
 func (c *UndoRedoContainer) Redo(m UndoRedoActionModels) {
-	for _, action := range c.actions {
+	c.mutex.Lock()
+	actions := slices.Clone(c.actions)
+	c.mutex.Unlock()
+
+	for _, action := range actions {
 		action.Redo(m)
 	}
 }
 
 func (c *UndoRedoContainer) Undo(m UndoRedoActionModels) {
-	for i := len(c.actions) - 1; i >= 0; i-- {
-		c.actions[i].Undo(m)
+	c.mutex.Lock()
+	actions := slices.Clone(c.actions)
+	c.mutex.Unlock()
+
+	for i := len(actions) - 1; i >= 0; i-- {
+		actions[i].Undo(m)
 	}
 }
 
 func (c *UndoRedoContainer) Len() int {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 	return len(c.actions)
+}
+
+var _ UndoRedoActionContainer = &SetCenterContainer{}
+
+type SetCenterContainer struct {
+	UndoRedoContainer
+}
+
+func NewSetCenterContainer() *SetCenterContainer {
+	return &SetCenterContainer{}
+}
+
+func (*SetCenterContainer) New() UndoRedoActionContainer {
+	return NewSetCenterContainer()
+}
+
+func (c *SetCenterContainer) Add(a UndoRedoAction) bool {
+	if reflect.TypeOf(a) != reflect.TypeOf((*SetCenterAction)(nil)) {
+		return false
+	}
+
+	c.mutex.Lock()
+	c.actions = append(c.actions, a)
+	c.mutex.Unlock()
+
+	return true
+}
+
+var _ UndoRedoActionContainer = &RotateMapContainer{}
+
+type RotateMapContainer struct {
+	UndoRedoContainer
+}
+
+func NewRotateMapContainer() *RotateMapContainer {
+	return &RotateMapContainer{}
+}
+
+func (*RotateMapContainer) New() UndoRedoActionContainer {
+	return NewRotateMapContainer()
+}
+
+func (c *RotateMapContainer) Add(a UndoRedoAction) bool {
+	t := reflect.TypeOf(a)
+	if t != reflect.TypeOf((*RotateClockwiseAction)(nil)) &&
+		t != reflect.TypeOf((*RotateCounterclockwiseAction)(nil)) {
+		return false
+	}
+
+	c.mutex.Lock()
+	c.actions = append(c.actions, a)
+	c.mutex.Unlock()
+
+	return true
 }
 
 var _ UndoRedoAction = &SetFloorAction{}
@@ -82,10 +170,6 @@ type SetFloorAction struct {
 
 func NewSetFloorAction(pos utils.Int2, layerId uuid.UUID, value uint32) *SetFloorAction {
 	return &SetFloorAction{pos: pos, layerId: layerId, value: value}
-}
-
-func (a *SetFloorAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
 }
 
 func (a *SetFloorAction) Redo(m UndoRedoActionModels) {
@@ -111,10 +195,6 @@ func NewSetWallAction(pos utils.Int2, layerId uuid.UUID, isRight bool, value uin
 	return &SetWallAction{pos: pos, layerId: layerId, isRight: isRight, value: value}
 }
 
-func (a *SetWallAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
-}
-
 func (a *SetWallAction) Redo(m UndoRedoActionModels) {
 	layerIndex := m.M.LayerIndexById(a.layerId)
 	a.oldValue = m.Rm.Wall(a.pos.X, a.pos.Y, layerIndex, a.isRight)
@@ -137,10 +217,6 @@ func NewSetNoteIdAction(pos utils.Int2, layerId uuid.UUID, value string) *SetNot
 	return &SetNoteIdAction{pos: pos, layerId: layerId, value: value}
 }
 
-func (a *SetNoteIdAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
-}
-
 func (a *SetNoteIdAction) Redo(m UndoRedoActionModels) {
 	layerIndex := m.M.LayerIndexById(a.layerId)
 	a.oldValue = m.Rm.NoteId(a.pos.X, a.pos.Y, layerIndex)
@@ -152,8 +228,6 @@ func (a *SetNoteIdAction) Undo(m UndoRedoActionModels) {
 	m.Rm.SetNoteId(a.pos.X, a.pos.Y, layerIndex, a.oldValue)
 }
 
-var _ UndoRedoActionContainer = &AddLayerAction{}
-
 type AddLayerAction struct {
 	layerId   uuid.UUID
 	name      string
@@ -163,10 +237,6 @@ type AddLayerAction struct {
 
 func NewAddLayerAction(name string, visible bool, layerType map_model.LayerType) *AddLayerAction {
 	return &AddLayerAction{layerId: uuid.New(), name: name, visible: visible, layerType: layerType}
-}
-
-func (a *AddLayerAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
 }
 
 func (a *AddLayerAction) Redo(m UndoRedoActionModels) {
@@ -189,10 +259,6 @@ type DeleteLayerAction struct {
 
 func NewDeleteLayerAction(layerId uuid.UUID) *DeleteLayerAction {
 	return &DeleteLayerAction{layerId: layerId}
-}
-
-func (a *DeleteLayerAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
 }
 
 func (a *DeleteLayerAction) Redo(m UndoRedoActionModels) {
@@ -218,10 +284,6 @@ type MoveLayerAction struct {
 
 func NewMoveLayerAction(offset int, layerId uuid.UUID) *MoveLayerAction {
 	return &MoveLayerAction{offset: offset, layerId: layerId}
-}
-
-func (a *MoveLayerAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
 }
 
 func (a *MoveLayerAction) Redo(m UndoRedoActionModels) {
@@ -251,10 +313,6 @@ func NewClearLayerAction(layerId uuid.UUID) *ClearLayerAction {
 	return &ClearLayerAction{layerId: layerId}
 }
 
-func (a *ClearLayerAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
-}
-
 func (a *ClearLayerAction) Redo(m UndoRedoActionModels) {
 	layerIndex := m.M.LayerIndexById(a.layerId)
 	a.locations = m.M.Locations(layerIndex)
@@ -265,8 +323,6 @@ func (a *ClearLayerAction) Undo(m UndoRedoActionModels) {
 	m.M.SetLocations(m.M.LayerIndexById(a.layerId), a.locations)
 }
 
-var _ UndoRedoActionContainer = &MoveToSelectedAction{}
-
 type MoveToSelectedAction struct {
 	offset      utils.Int2
 	moveLayerId uuid.UUID
@@ -274,24 +330,6 @@ type MoveToSelectedAction struct {
 
 func NewMoveToSelectedAction(moveLayerId uuid.UUID, offset utils.Int2) *MoveToSelectedAction {
 	return &MoveToSelectedAction{offset: offset, moveLayerId: moveLayerId}
-}
-
-func (a *MoveToSelectedAction) AddTo(container *UndoRedoContainer) {
-	if a.offset.X == 0 && a.offset.Y == 0 {
-		return
-	}
-
-	act := container.actions
-
-	if len(act) == 0 {
-		act = append(act, a)
-	} else {
-		prevAction := act[len(act)-1].(*MoveToSelectedAction)
-		prevAction.offset.X += a.offset.X
-		prevAction.offset.Y += a.offset.Y
-	}
-
-	container.actions = act
 }
 
 func (a *MoveToSelectedAction) Redo(m UndoRedoActionModels) {
@@ -325,10 +363,6 @@ func NewSelectAction(pos utils.Int2, selectType SelectType) *SelectAction {
 	return &SelectAction{pos: pos, selectType: selectType}
 }
 
-func (a *SelectAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
-}
-
 func (a *SelectAction) Redo(m UndoRedoActionModels) {
 	if a.selectType == Floor {
 		m.Rs.SelectFloor(a.pos.X, a.pos.Y)
@@ -357,10 +391,6 @@ func NewUnselectAllAction() *UnselectAllAction {
 	return &UnselectAllAction{}
 }
 
-func (a *UnselectAllAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
-}
-
 func (a *UnselectAllAction) Redo(m UndoRedoActionModels) {
 	a.selected = m.Sm.Selected()
 	m.Sm.UnselectAll()
@@ -377,10 +407,6 @@ type SetSelectedAction struct {
 
 func NewSetSelectedAction(selected map[utils.Int2]select_model.Selected) *SetSelectedAction {
 	return &SetSelectedAction{selected: selected}
-}
-
-func (a *SetSelectedAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
 }
 
 func (a *SetSelectedAction) Redo(m UndoRedoActionModels) {
@@ -402,10 +428,6 @@ func NewMergeLayersAction(fromLayerId uuid.UUID, toLayerId uuid.UUID) *MergeLaye
 	return &MergeLayersAction{fromLayerId: fromLayerId, toLayerId: toLayerId, actions: NewUndoRedoContainer()}
 }
 
-func (a *MergeLayersAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
-}
-
 func (a *MergeLayersAction) Redo(m UndoRedoActionModels) {
 	if a.actions.Len() == 0 {
 		fromLayerIndex := m.M.LayerIndexById(a.fromLayerId)
@@ -417,24 +439,24 @@ func (a *MergeLayersAction) Redo(m UndoRedoActionModels) {
 				if v := m.Rm.Floor(x, y, fromLayerIndex); v > 0 {
 					action := NewSetFloorAction(utils.NewInt2(x, y), a.toLayerId, m.Rm.Floor(x, y, fromLayerIndex))
 					action.Redo(m)
-					action.AddTo(a.actions)
+					a.actions.Add(action)
 				}
 				if v := m.Rm.Wall(x, y, fromLayerIndex, true); v > 0 {
 					action := NewSetWallAction(utils.NewInt2(x, y), a.toLayerId, true, v)
 					action.Redo(m)
-					action.AddTo(a.actions)
+					a.actions.Add(action)
 				}
 				if v := m.Rm.Wall(x, y, fromLayerIndex, false); v > 0 {
 					action := NewSetWallAction(utils.NewInt2(x, y), a.toLayerId, false, v)
 					action.Redo(m)
-					action.AddTo(a.actions)
+					a.actions.Add(action)
 				}
 			}
 		}
 
 		deleteLayerAction := NewDeleteLayerAction(a.fromLayerId)
 		deleteLayerAction.Redo(m)
-		deleteLayerAction.AddTo(a.actions)
+		a.actions.Add(deleteLayerAction)
 	} else {
 		a.actions.Redo(m)
 	}
@@ -454,10 +476,6 @@ func NewMergeLayerDownAction(fromLayerId uuid.UUID) *MergeLayerDownAction {
 	return &MergeLayerDownAction{fromLayerId: fromLayerId, actions: NewUndoRedoContainer()}
 }
 
-func (a *MergeLayerDownAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
-}
-
 func (a *MergeLayerDownAction) Redo(m UndoRedoActionModels) {
 	if a.actions.Len() == 0 {
 		fromLayerIndex := m.M.LayerIndexById(a.fromLayerId)
@@ -465,7 +483,7 @@ func (a *MergeLayerDownAction) Redo(m UndoRedoActionModels) {
 
 		action := NewMergeLayersAction(a.fromLayerId, toLayerId)
 		action.Redo(m)
-		action.AddTo(a.actions)
+		a.actions.Add(action)
 	} else {
 		a.actions.Redo(m)
 	}
@@ -484,10 +502,6 @@ func NewSetModeAndMergeDownMoveLayerAction(mode mode_model.Mode) *SetModeAndMerg
 	return &SetModeAndMergeDownMoveLayerAction{mode: mode, actions: NewUndoRedoContainer()}
 }
 
-func (a *SetModeAndMergeDownMoveLayerAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
-}
-
 func (a *SetModeAndMergeDownMoveLayerAction) Redo(m UndoRedoActionModels) {
 	if a.actions.Len() == 0 {
 		moveLayerIndex := pie.FirstOr(m.M.LayerIndexByType(map_model.MoveLayerType), -1)
@@ -500,18 +514,18 @@ func (a *SetModeAndMergeDownMoveLayerAction) Redo(m UndoRedoActionModels) {
 			if leftTop != rightBottom {
 				moveAction := NewMergeLayerDownAction(moveLayerId)
 				moveAction.Redo(m)
-				moveAction.AddTo(a.actions)
+				a.actions.Add(moveAction)
 
 				setSelectedLayerAction := NewSetSelectedLayerAction(moveLayerIndex)
 				setSelectedLayerAction.Redo(m)
-				setSelectedLayerAction.AddTo(a.actions)
+				a.actions.Add(setSelectedLayerAction)
 			}
 		}
 
 		if m.Mm.Mode() != a.mode {
 			setModeAction := NewSetModeAction(a.mode)
 			setModeAction.Redo(m)
-			setModeAction.AddTo(a.actions)
+			a.actions.Add(setModeAction)
 		}
 	} else {
 		a.actions.Redo(m)
@@ -529,10 +543,6 @@ type SetModeAction struct {
 
 func NewSetModeAction(mode mode_model.Mode) *SetModeAction {
 	return &SetModeAction{mode: mode}
-}
-
-func (a *SetModeAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
 }
 
 func (a *SetModeAction) Redo(m UndoRedoActionModels) {
@@ -585,7 +595,7 @@ func (a *CutAction) Redo(m UndoRedoActionModels) {
 	if a.actions.Len() == 0 {
 		unselectAction := NewUnselectAllAction()
 		unselectAction.Redo(m)
-		unselectAction.AddTo(a.actions)
+		a.actions.Add(unselectAction)
 
 		for pos, location := range a.copyResult.Locations {
 			x, y := m.R.TransformToRot(pos.X, pos.Y)
@@ -593,17 +603,17 @@ func (a *CutAction) Redo(m UndoRedoActionModels) {
 			if location.Floor > 0 {
 				action := NewSetFloorAction(utils.NewInt2(x, y), a.copyResult.LayerId, 0)
 				action.Redo(m)
-				action.AddTo(a.actions)
+				a.actions.Add(action)
 			}
 			if location.RightWall > 0 {
 				action := NewSetWallAction(utils.NewInt2(x, y), a.copyResult.LayerId, true, 0)
 				action.Redo(m)
-				action.AddTo(a.actions)
+				a.actions.Add(action)
 			}
 			if location.BottomWall > 0 {
 				action := NewSetWallAction(utils.NewInt2(x, y), a.copyResult.LayerId, false, 0)
 				action.Redo(m)
-				action.AddTo(a.actions)
+				a.actions.Add(action)
 			}
 		}
 	} else {
@@ -629,10 +639,6 @@ func NewPasteToMoveLayerAction(pos utils.Int2, copyResult copy_model.CopyResult)
 	}
 }
 
-func (a *PasteToMoveLayerAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
-}
-
 func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 	if a.actions.Len() == 0 {
 		leftTop, rightBottom := a.copyResult.Bounds()
@@ -642,7 +648,7 @@ func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 
 		unselectAction := NewUnselectAllAction()
 		unselectAction.Redo(m)
-		unselectAction.AddTo(a.actions)
+		a.actions.Add(unselectAction)
 
 		leftTop.X, leftTop.Y = m.R.TransformToRot(leftTop.X, leftTop.Y)
 
@@ -654,7 +660,7 @@ func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 
 		addPastedLayerAction := NewAddLayerAction("Pasted layer", true, map_model.MoveLayerType)
 		addPastedLayerAction.Redo(m)
-		addPastedLayerAction.AddTo(a.actions)
+		a.actions.Add(addPastedLayerAction)
 
 		moveLayersIndices := m.M.LayerIndexByType(map_model.MoveLayerType)
 		if len(moveLayersIndices) != 1 {
@@ -667,11 +673,11 @@ func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 
 		moveUpAction := NewMoveLayerAction(int(selectedLayerAfter-moveLayerIndex), moveLayerId)
 		moveUpAction.Redo(m)
-		moveUpAction.AddTo(a.actions)
+		a.actions.Add(moveUpAction)
 
 		setSelectedLayerAction := NewSetSelectedLayerAction(selectedLayerAfter)
 		setSelectedLayerAction.Redo(m)
-		setSelectedLayerAction.AddTo(a.actions)
+		a.actions.Add(setSelectedLayerAction)
 
 		selected := make(map[utils.Int2]select_model.Selected)
 
@@ -685,7 +691,7 @@ func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 			if location.Floor > 0 {
 				action := NewSetFloorAction(pos, moveLayerId, location.Floor)
 				action.Redo(m)
-				action.AddTo(a.actions)
+				a.actions.Add(action)
 
 				s := selected[pos]
 				s.Floor = true
@@ -694,7 +700,7 @@ func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 			if location.RightWall > 0 {
 				action := NewSetWallAction(pos, moveLayerId, true, location.RightWall)
 				action.Redo(m)
-				action.AddTo(a.actions)
+				a.actions.Add(action)
 
 				s := selected[pos]
 				s.RightWall = true
@@ -703,7 +709,7 @@ func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 			if location.BottomWall > 0 {
 				action := NewSetWallAction(pos, moveLayerId, false, location.BottomWall)
 				action.Redo(m)
-				action.AddTo(a.actions)
+				a.actions.Add(action)
 
 				s := selected[pos]
 				s.BottomWall = true
@@ -713,11 +719,11 @@ func (a *PasteToMoveLayerAction) Redo(m UndoRedoActionModels) {
 
 		action := NewSetSelectedAction(selected)
 		action.Redo(m)
-		action.AddTo(a.actions)
+		a.actions.Add(action)
 
 		setModeAction := NewSetModeAction(mode_model.MoveMode)
 		setModeAction.Redo(m)
-		setModeAction.AddTo(a.actions)
+		a.actions.Add(setModeAction)
 	} else {
 		a.actions.Redo(m)
 	}
@@ -736,10 +742,6 @@ func NewSetSelectedLayerAction(value int32) *SetSelectedLayerAction {
 	return &SetSelectedLayerAction{value: value}
 }
 
-func (a *SetSelectedLayerAction) AddTo(container *UndoRedoContainer) {
-	container.actions = append(container.actions, a)
-}
-
 func (a *SetSelectedLayerAction) Redo(m UndoRedoActionModels) {
 	a.oldValue = m.Slm.Selected()
 	m.Slm.SetSelected(a.value)
@@ -747,4 +749,22 @@ func (a *SetSelectedLayerAction) Redo(m UndoRedoActionModels) {
 
 func (a *SetSelectedLayerAction) Undo(m UndoRedoActionModels) {
 	m.Slm.SetSelected(a.oldValue)
+}
+
+type SetCenterAction struct {
+	pos    utils.Int2
+	oldPos utils.Int2
+}
+
+func NewSetCenterAction(pos utils.Int2) *SetCenterAction {
+	return &SetCenterAction{pos: pos}
+}
+
+func (a *SetCenterAction) Redo(m UndoRedoActionModels) {
+	a.oldPos = m.Cm.Get()
+	m.Cm.Set(a.pos)
+}
+
+func (a *SetCenterAction) Undo(m UndoRedoActionModels) {
+	m.Cm.Set(a.oldPos)
 }

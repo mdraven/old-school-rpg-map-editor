@@ -96,6 +96,9 @@ func NewMapModel() *MapModel {
 }
 
 func (m *MapModel) MarshalJSON() ([]byte, error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
 	t := struct {
 		Layers []*Layer `json:"layers"`
 	}{Layers: m.layers}
@@ -104,6 +107,9 @@ func (m *MapModel) MarshalJSON() ([]byte, error) {
 }
 
 func (m *MapModel) UnmarshalJSON(d []byte) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
 	var t struct {
 		Layers []*Layer `json:"layers"`
 	}

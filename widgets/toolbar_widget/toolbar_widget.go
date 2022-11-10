@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"old-school-rpg-map-editor/common"
 	"old-school-rpg-map-editor/common/load_save"
+	"old-school-rpg-map-editor/models/center_model"
 	"old-school-rpg-map-editor/models/copy_model"
 	"old-school-rpg-map-editor/models/map_model"
 	"old-school-rpg-map-editor/models/maps_model"
@@ -79,8 +80,9 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 		rotSelectModel := rot_select_model.NewRotSelectModel(selectModel, rotateModel)
 		notesModel := notes_model.NewNotesModel(8, fnt)
 		undoRedoQueue := undo_redo.NewUndoRedoQueue(100 /*TODO*/)
+		centerModel := center_model.NewCenterModel(utils.Int2{})
 
-		mapsModel.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, selectedLayerModel, "")
+		mapsModel.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, selectedLayerModel, centerModel, "")
 	})
 
 	openFile := toolbar_action.NewToolbarAction(theme.FolderOpenIcon(), func() {
@@ -112,8 +114,9 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 			rotMapModel := rot_map_model.NewRotMapMode(mapModel, rotateModel)
 			rotSelectModel := rot_select_model.NewRotSelectModel(selectModel, rotateModel)
 			undoRedoQueue := undo_redo.NewUndoRedoQueue(100 /*TODO*/)
+			centerModel := center_model.NewCenterModel(utils.Int2{})
 
-			mapsModel.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, selectedLayerModel, uc.URI().Path())
+			mapsModel.Add(mapModel, selectModel, mode_model.NewModeModel(), rotateModel, rotMapModel, rotSelectModel, notesModel, undoRedoQueue, selectedLayerModel, centerModel, uc.URI().Path())
 		}, window)
 		d.SetFilter(storage.NewExtensionFileFilter([]string{".map"}))
 		d.Resize(window.Canvas().Size())
@@ -234,12 +237,11 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 
 		actions := undo_redo.NewUndoRedoContainer()
 
-		err := common.MakeAction(undo_redo.NewSetModeAndMergeDownMoveLayerAction(mode_model.MoveMode), mapsModel, mapElem.MapId, actions)
-		if err != nil {
-			// TODO
-			fmt.Println(err)
-			return
-		}
+		actionModels := undo_redo.NewUndoRedoActionModels(mapElem.Model, mapElem.RotateModel, mapElem.RotMapModel, mapElem.RotSelectModel, mapElem.SelectModel, mapElem.ModeModel, mapElem.SelectedLayerModel, mapElem.CenterModel)
+
+		action := undo_redo.NewSetModeAndMergeDownMoveLayerAction(mode_model.MoveMode)
+		action.Redo(actionModels)
+		actions.Add(action)
 
 		mapWidget := doc_tabs_widget.GetMapWidget(mapElem.ExternalData)
 
@@ -258,14 +260,11 @@ func NewToolbar(window fyne.Window, fnt *truetype.Font, mapsModel *maps_model.Ma
 			}
 		}
 
-		err = common.MakeAction(undo_redo.NewPasteToMoveLayerAction(pastePos, copyResult), mapsModel, mapElem.MapId, actions)
-		if err != nil {
-			// TODO
-			fmt.Println(err)
-			return
-		}
+		pasteToMoveLayerAction := undo_redo.NewPasteToMoveLayerAction(pastePos, copyResult)
+		pasteToMoveLayerAction.Redo(actionModels)
+		actions.Add(pasteToMoveLayerAction)
 
-		err = common.MakeAction(actions, mapsModel, mapElem.MapId, nil)
+		err := common.MakeAction(actions, mapsModel, mapElem.MapId, nil)
 		if err != nil {
 			// TODO
 			fmt.Println(err)
@@ -422,7 +421,7 @@ func Undo(selectedMapTabModel *selected_map_tab_model.SelectedMapTabModel, mapsM
 	mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 	action := mapElem.UndoRedoQueue.Action(mapElem.ChangeGeneration)
 	if action.Action != nil {
-		action.Action.Undo(undo_redo.NewUndoRedoActionModels(mapElem.Model, mapElem.RotateModel, mapElem.RotMapModel, mapElem.RotSelectModel, mapElem.SelectModel, mapElem.ModeModel, mapElem.SelectedLayerModel))
+		action.Action.Undo(undo_redo.NewUndoRedoActionModels(mapElem.Model, mapElem.RotateModel, mapElem.RotMapModel, mapElem.RotSelectModel, mapElem.SelectModel, mapElem.ModeModel, mapElem.SelectedLayerModel, mapElem.CenterModel))
 		actionBefore := mapElem.UndoRedoQueue.ActionBefore(mapElem.ChangeGeneration)
 		mapsModel.SetChangeGeneration(mapElem.MapId, actionBefore.ChangeGeneration)
 	}
@@ -432,7 +431,7 @@ func Redo(selectedMapTabModel *selected_map_tab_model.SelectedMapTabModel, mapsM
 	mapElem := mapsModel.GetById(selectedMapTabModel.Selected())
 	actionAfter := mapElem.UndoRedoQueue.ActionAfter(mapElem.ChangeGeneration)
 	if actionAfter.Action != nil {
-		actionAfter.Action.Redo(undo_redo.NewUndoRedoActionModels(mapElem.Model, mapElem.RotateModel, mapElem.RotMapModel, mapElem.RotSelectModel, mapElem.SelectModel, mapElem.ModeModel, mapElem.SelectedLayerModel))
+		actionAfter.Action.Redo(undo_redo.NewUndoRedoActionModels(mapElem.Model, mapElem.RotateModel, mapElem.RotMapModel, mapElem.RotSelectModel, mapElem.SelectModel, mapElem.ModeModel, mapElem.SelectedLayerModel, mapElem.CenterModel))
 		mapsModel.SetChangeGeneration(mapElem.MapId, actionAfter.ChangeGeneration)
 	}
 }
@@ -444,23 +443,17 @@ func SetMode(mapsModel *maps_model.MapsModel, mapId uuid.UUID, mode mode_model.M
 		if mapElem.ModeModel.Mode() != mode {
 			actions := undo_redo.NewUndoRedoContainer()
 
+			actionModels := undo_redo.NewUndoRedoActionModels(mapElem.Model, mapElem.RotateModel, mapElem.RotMapModel, mapElem.RotSelectModel, mapElem.SelectModel, mapElem.ModeModel, mapElem.SelectedLayerModel, mapElem.CenterModel)
+
 			unselectAllAction := undo_redo.NewUnselectAllAction()
-			err := common.MakeAction(unselectAllAction, mapsModel, mapElem.MapId, actions)
-			if err != nil {
-				// TODO
-				fmt.Println(err)
-				return
-			}
+			unselectAllAction.Redo(actionModels)
+			actions.Add(unselectAllAction)
 
 			setModeAndMergeDownMoveLayerAction := undo_redo.NewSetModeAndMergeDownMoveLayerAction(mode)
-			err = common.MakeAction(setModeAndMergeDownMoveLayerAction, mapsModel, mapElem.MapId, actions)
-			if err != nil {
-				// TODO
-				fmt.Println(err)
-				return
-			}
+			setModeAndMergeDownMoveLayerAction.Redo(actionModels)
+			actions.Add(setModeAndMergeDownMoveLayerAction)
 
-			err = common.MakeAction(actions, mapsModel, mapElem.MapId, nil)
+			err := common.MakeAction(actions, mapsModel, mapElem.MapId, nil)
 			if err != nil {
 				// TODO
 				fmt.Println(err)

@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"image/draw"
 	"old-school-rpg-map-editor/configuration"
+	"old-school-rpg-map-editor/models/center_model"
 	"old-school-rpg-map-editor/models/mode_model"
 	"old-school-rpg-map-editor/models/notes_model"
 	"old-school-rpg-map-editor/models/rot_map_model"
@@ -81,29 +82,33 @@ type MapWidget struct {
 	wallSelectedImage      image.Image // resized
 	wallSelectedImage90    image.Image // resized
 	imageConfig            configuration.ImageConfig
-	mapModel               *rot_map_model.RotMapModel
-	disconnectMapModel     utils.Signal0
-	selectModel            *rot_select_model.RotSelectModel
-	disconnectSelectModel  func()
-	modeModel              *mode_model.ModeModel
-	disconnectModeModel    func()
-	rotateModel            *rotate_model.RotateModel
-	disconnectRotateModel  utils.Signal0
-	notesModel             *notes_model.NotesModel
-	disconnectNotesModel   utils.Signal0
-	clickFloor             func(x, y int)
-	clickWall              func(x, y int, isRight bool /*or bottom*/)
-	moveSelectedTo         func(offsetX, offsetY int, moveType MoveSelectedToType)
-	selectArea             func(floors []utils.Int2, rightWall []utils.Int2, bottomWall []utils.Int2)
-	unselectAll            func()
-	isClickFloor           bool // обрабатывать click на floor или wall
-	modeData               modeData
-	offset                 utils.Float2
-	scale                  float32
-	draggedSecondary       draggedSecondary
+
+	mapModel              *rot_map_model.RotMapModel
+	disconnectMapModel    utils.Signal0
+	selectModel           *rot_select_model.RotSelectModel
+	disconnectSelectModel func()
+	modeModel             *mode_model.ModeModel
+	disconnectModeModel   func()
+	rotateModel           *rotate_model.RotateModel
+	disconnectRotateModel utils.Signal0
+	notesModel            *notes_model.NotesModel
+	disconnectNotesModel  utils.Signal0
+	centerModel           *center_model.CenterModel
+	disconnectCenterModel utils.Signal0
+
+	clickFloor     func(x, y int)
+	clickWall      func(x, y int, isRight bool /*or bottom*/)
+	moveSelectedTo func(offsetX, offsetY int, moveType MoveSelectedToType)
+	selectArea     func(floors []utils.Int2, rightWall []utils.Int2, bottomWall []utils.Int2)
+	unselectAll    func()
+	isClickFloor   bool // обрабатывать click на floor или wall
+	modeData       modeData
+	//offset                 utils.Float2
+	scale            float32
+	draggedSecondary draggedSecondary
 }
 
-func NewMapWidget(floorImage image.Image, wallImage image.Image, floorSelectedImage image.Image, wallSelectedImage image.Image, imageConfig configuration.ImageConfig, rotateModel *rotate_model.RotateModel, mapModel *rot_map_model.RotMapModel, selectModel *rot_select_model.RotSelectModel, modeModel *mode_model.ModeModel, notesModel *notes_model.NotesModel, clickFloor func(x, y int), clickWall func(x, y int, isRight bool), moveSelectedTo func(offsetX, offsetY int, moveType MoveSelectedToType), selectArea func(floors []utils.Int2, rightWall []utils.Int2, bottomWall []utils.Int2), unselectAll func()) *MapWidget {
+func NewMapWidget(floorImage image.Image, wallImage image.Image, floorSelectedImage image.Image, wallSelectedImage image.Image, imageConfig configuration.ImageConfig, rotateModel *rotate_model.RotateModel, mapModel *rot_map_model.RotMapModel, selectModel *rot_select_model.RotSelectModel, modeModel *mode_model.ModeModel, notesModel *notes_model.NotesModel, centerModel *center_model.CenterModel, clickFloor func(x, y int), clickWall func(x, y int, isRight bool), moveSelectedTo func(offsetX, offsetY int, moveType MoveSelectedToType), selectArea func(floors []utils.Int2, rightWall []utils.Int2, bottomWall []utils.Int2), unselectAll func()) *MapWidget {
 	w := &MapWidget{
 		origFloorImage:         floorImage,
 		floorImage:             floorImage,
@@ -130,6 +135,7 @@ func NewMapWidget(floorImage image.Image, wallImage image.Image, floorSelectedIm
 	w.SetSelectModel(selectModel)
 	w.SetModeModel(modeModel)
 	w.SetNotesModel(notesModel)
+	w.SetCenterModel(centerModel)
 
 	w.ExtendBaseWidget(w)
 	return w
@@ -141,6 +147,7 @@ func (w *MapWidget) Destroy() {
 	w.SetSelectModel(nil)
 	w.SetModeModel(nil)
 	w.SetNotesModel(nil)
+	w.SetCenterModel(nil)
 }
 
 func (w *MapWidget) CreateRenderer() fyne.WidgetRenderer {
@@ -152,7 +159,9 @@ func (w *MapWidget) isFloorSelected(model *rot_select_model.RotSelectModel, x, y
 	fFloorSize := float32(w.imageConfig.FloorSize)
 	scaledFloorWbSize := int((fFloorSize + 1) * w.scale) // With Border
 
-	mapX, mapY, _, _ := w.screenPixelToFloorCoords(x, y, uint(scaledFloorWbSize))
+	center := w.centerModel.Get()
+
+	mapX, mapY, _, _ := w.screenPixelToFloorCoords(x, y, uint(scaledFloorWbSize), center)
 	return model.IsFloorSelected(mapX, mapY)
 }
 
@@ -162,7 +171,9 @@ func (w *MapWidget) isWallSelected(model *rot_select_model.RotSelectModel, x, y 
 	scaledFloorWbSize := int((fFloorSize + 1) * w.scale) // With Border
 	halfScaledWallWidth := uint(float32(w.imageConfig.WallWidth) * w.scale / 2)
 
-	mapX, mapY, imgX, imgY := w.screenPixelToFloorCoords(x, y, uint(scaledFloorWbSize))
+	center := w.centerModel.Get()
+
+	mapX, mapY, imgX, imgY := w.screenPixelToFloorCoords(x, y, uint(scaledFloorWbSize), center)
 
 	if imgX < halfScaledWallWidth {
 		return model.IsWallSelected(mapX-1, mapY, true)
@@ -189,15 +200,17 @@ func (w *MapWidget) Tapped(ev *fyne.PointEvent) {
 		fFloorSize := float32(w.imageConfig.FloorSize)
 		fWallWidth := float32(w.imageConfig.WallWidth)
 
+		center := w.centerModel.Get()
+
 		if w.isClickFloor {
-			mapX, mapY, _, _ := w.screenPixelToFloorCoords(uint(ev.Position.X), uint(ev.Position.Y), uint((fFloorSize+1)*w.scale))
+			mapX, mapY, _, _ := w.screenPixelToFloorCoords(uint(ev.Position.X), uint(ev.Position.Y), uint((fFloorSize+1)*w.scale), center)
 			once.Do(w.mutex.Unlock)
 			w.clickFloor(mapX, mapY)
 		} else {
 			// Так как половина стены выползает за floor, то подвинем координаты на wallWidth/2
 			pos := ev.Position.Subtract(fyne.NewDelta(fWallWidth*w.scale/2, fWallWidth*w.scale/2))
 
-			mapX, mapY, imgX, imgY := w.screenPixelToFloorCoords(uint(pos.X), uint(pos.Y), uint((fFloorSize+1)*w.scale))
+			mapX, mapY, imgX, imgY := w.screenPixelToFloorCoords(uint(pos.X), uint(pos.Y), uint((fFloorSize+1)*w.scale), center)
 
 			floorWithoutWall := (fFloorSize + 1 - fWallWidth) * w.scale
 
@@ -261,12 +274,10 @@ func (w *MapWidget) DraggedSecondary(dX float32, dY float32) {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
-	offset := w.offset
-	offset.X -= dX
-	offset.Y -= dY
-	w.offset = offset
-
-	w.Refresh()
+	offset := w.centerModel.Get()
+	offset.X -= int(dX)
+	offset.Y -= int(dY)
+	w.centerModel.Set(offset)
 }
 
 func (w *MapWidget) Dragged(ev *fyne.DragEvent) {
@@ -289,44 +300,44 @@ func (w *MapWidget) Dragged(ev *fyne.DragEvent) {
 		mode.selectionArea.End.X = int(ev.Position.X)
 		mode.selectionArea.End.Y = int(ev.Position.Y)
 
-		offset := w.offset
+		offset := w.centerModel.Get()
 
 		// скролинг у краёв по-горизонтали
 		if ev.Position.X > w.Size().Width {
 			diff := utils.Max(w.Size().Width-ev.Position.X, -10)
-			offset.X -= diff
+			offset.X -= int(diff)
 			mode.selectionArea.Begin.X += int(diff)
 		} else if ev.Position.X < 0 {
 			diff := utils.Max(ev.Position.X, -10)
-			offset.X += diff
+			offset.X += int(diff)
 			mode.selectionArea.Begin.X -= int(diff)
 		}
 
 		// скролинг у краёв по-вертикали
 		if ev.Position.Y > w.Size().Height {
 			diff := utils.Max(w.Size().Height-ev.Position.Y, -10)
-			offset.Y -= diff
+			offset.Y -= int(diff)
 			mode.selectionArea.Begin.Y += int(diff)
 		} else if ev.Position.Y < 0 {
 			diff := utils.Max(ev.Position.Y, -10)
-			offset.Y += diff
+			offset.Y += int(diff)
 			mode.selectionArea.Begin.Y -= int(diff)
 		}
 
-		if offset != w.offset {
-			w.offset = offset
-		}
+		w.centerModel.Set(offset)
 
 		w.Refresh()
 	case *moveModeData:
 		fFloorSize := float32(w.imageConfig.FloorSize)
 		scaledFloorWbSize := int((fFloorSize + 1) * w.scale) // With Border
 
+		center := w.centerModel.Get()
+
 		if mode.begin == nil {
 			if w.isFloorSelected(w.selectModel, uint(ev.Position.X), uint(ev.Position.Y)) ||
 				w.isWallSelected(w.selectModel, uint(ev.Position.X), uint(ev.Position.Y)) {
 
-				mapX, mapY, _, _ := w.screenPixelToFloorCoords(uint(ev.Position.X), uint(ev.Position.Y), uint(scaledFloorWbSize))
+				mapX, mapY, _, _ := w.screenPixelToFloorCoords(uint(ev.Position.X), uint(ev.Position.Y), uint(scaledFloorWbSize), center)
 
 				int2 := utils.NewInt2(mapX, mapY)
 				mode.begin = &int2
@@ -338,7 +349,7 @@ func (w *MapWidget) Dragged(ev *fyne.DragEvent) {
 			return
 		}
 
-		mapX, mapY, _, _ := w.screenPixelToFloorCoords(uint(ev.Position.X), uint(ev.Position.Y), uint(scaledFloorWbSize))
+		mapX, mapY, _, _ := w.screenPixelToFloorCoords(uint(ev.Position.X), uint(ev.Position.Y), uint(scaledFloorWbSize), center)
 
 		offsetX := mapX - mode.begin.X
 		offsetY := mapY - mode.begin.Y
@@ -366,6 +377,8 @@ func (w *MapWidget) DragEnd() {
 			scaledFloorWbSize := int((fFloorSize + 1) * w.scale) // With Border
 			halfScaledWallWidth := uint(float32(w.imageConfig.WallWidth) * w.scale / 2)
 
+			center := w.centerModel.Get()
+
 			rect := utils.VectorInt{
 				Begin: utils.Int2{
 					X: utils.Min(modeData.selectionArea.Begin.X, modeData.selectionArea.End.X),
@@ -377,8 +390,8 @@ func (w *MapWidget) DragEnd() {
 				},
 			}
 
-			mapLeft, mapTop, imgLeft, imgTop := w.screenPixelToFloorCoords(uint(rect.Begin.X), uint(rect.Begin.Y), uint(scaledFloorWbSize))
-			mapRight, mapBottom, imgRight, imgBottom := w.screenPixelToFloorCoords(uint(rect.End.X), uint(rect.End.Y), uint(scaledFloorWbSize))
+			mapLeft, mapTop, imgLeft, imgTop := w.screenPixelToFloorCoords(uint(rect.Begin.X), uint(rect.Begin.Y), uint(scaledFloorWbSize), center)
+			mapRight, mapBottom, imgRight, imgBottom := w.screenPixelToFloorCoords(uint(rect.End.X), uint(rect.End.Y), uint(scaledFloorWbSize), center)
 			mapRight++
 			mapBottom++
 
@@ -439,7 +452,7 @@ func (w *MapWidget) Scrolled(ev *fyne.ScrollEvent) {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
-	oldOffset := w.offset
+	oldCenter := w.centerModel.Get()
 
 	coef := float32(0)
 
@@ -450,29 +463,17 @@ func (w *MapWidget) Scrolled(ev *fyne.ScrollEvent) {
 	}
 
 	fFloorSize := float32(w.imageConfig.FloorSize)
-	mapX, mapY, _, _ := w.screenPixelToFloorCoords(uint(w.Size().Width/2), uint(w.Size().Height/2), uint((fFloorSize+1)*w.scale))
+	mapX, mapY, _, _ := w.screenPixelToFloorCoords(uint(w.Size().Width/2), uint(w.Size().Height/2), uint((fFloorSize+1)*w.scale), oldCenter)
 
-	w.offset = utils.Float2{}
-
-	pX, pY := w.floorCoordsToScreenPixel(mapX, mapY, 0, 0, uint((fFloorSize+1)*w.scale*coef))
-	w.offset = utils.NewFloat2(float32(pX)-w.Size().Width/2, float32(pY)-w.Size().Height/2)
+	pX, pY := w.floorCoordsToScreenPixel(mapX, mapY, 0, 0, uint((fFloorSize+1)*w.scale*coef), utils.Int2{})
+	w.centerModel.Set(utils.NewInt2(pX-int(w.Size().Width/2), pY-int(w.Size().Height/2)))
 
 	if w.setScale(w.scale * coef) {
 		w.Refresh()
 		return
 	}
 
-	w.offset = oldOffset
-}
-
-func (w *MapWidget) SetCenter(pos utils.Int2) {
-	w.mutex.Lock()
-	defer w.mutex.Unlock()
-
-	fFloorSize := float32(w.imageConfig.FloorSize)
-
-	pX, pY := w.floorCoordsToScreenPixel(pos.X, pos.Y, 0, 0, uint((fFloorSize+1)*w.scale))
-	w.offset = utils.NewFloat2(float32(pX)-w.Size().Width/2, float32(pY)-w.Size().Height/2)
+	w.centerModel.Set(oldCenter)
 }
 
 func (w *MapWidget) Center() utils.Int2 {
@@ -481,7 +482,9 @@ func (w *MapWidget) Center() utils.Int2 {
 
 	fFloorSize := float32(w.imageConfig.FloorSize)
 
-	mapX, mapY, _, _ := w.screenPixelToFloorCoords(uint(w.Size().Width/2), uint(w.Size().Height/2), uint((fFloorSize+1)*w.scale))
+	center := w.centerModel.Get()
+
+	mapX, mapY, _, _ := w.screenPixelToFloorCoords(uint(w.Size().Width/2), uint(w.Size().Height/2), uint((fFloorSize+1)*w.scale), center)
 
 	return utils.NewInt2(mapX, mapY)
 }
@@ -607,22 +610,28 @@ func (w *MapWidget) SetRotateModel(rotateModel *rotate_model.RotateModel) {
 
 		var offsetBeforeRotate utils.Int2
 		w.disconnectRotateModel.AddSlot(rotateModel.AddBeforeRotateListener(func() {
-			w.mutex.Lock()
-			offsetBeforeRotate = utils.NewInt2(int(w.offset.X), int(w.offset.Y))
-			w.mutex.Unlock()
+			/*
+				w.mutex.Lock()
+				offsetBeforeRotate = utils.NewInt2(int(w.offset.X), int(w.offset.Y))
+				w.mutex.Unlock()
 
-			offsetBeforeRotate.X += int(w.Size().Width / 2)
-			offsetBeforeRotate.Y += int(w.Size().Height / 2)
+				offsetBeforeRotate.X += int(w.Size().Width / 2)
+				offsetBeforeRotate.Y += int(w.Size().Height / 2)
+			*/
+			offsetBeforeRotate = w.centerModel.Get()
 
 			offsetBeforeRotate.X, offsetBeforeRotate.Y = w.rotateModel.TransformToRot(offsetBeforeRotate.X, offsetBeforeRotate.Y)
 		}))
 		w.disconnectRotateModel.AddSlot(rotateModel.AddAfterRotateListener(func() {
 			offsetBeforeRotate.X, offsetBeforeRotate.Y = w.rotateModel.TransformFromRot(offsetBeforeRotate.X, offsetBeforeRotate.Y)
 
-			w.mutex.Lock()
-			w.offset.X = float32(offsetBeforeRotate.X) - w.Size().Width/2.
-			w.offset.Y = float32(offsetBeforeRotate.Y) - w.Size().Height/2.
-			w.mutex.Unlock()
+			w.centerModel.Set(offsetBeforeRotate)
+			/*
+				w.mutex.Lock()
+				w.offset.X = float32(offsetBeforeRotate.X) - w.Size().Width/2.
+				w.offset.Y = float32(offsetBeforeRotate.Y) - w.Size().Height/2.
+				w.mutex.Unlock()
+			*/
 		}))
 	}
 
@@ -692,8 +701,48 @@ func (w *MapWidget) SetNotesModel(notesModel *notes_model.NotesModel) {
 	w.Refresh()
 }
 
+func (w *MapWidget) SetCenterModel(centerModel *center_model.CenterModel) {
+	if w.centerModel == centerModel {
+		return
+	}
+
+	if w.centerModel != nil {
+		w.disconnectCenterModel.Emit()
+		w.disconnectCenterModel.Clear()
+	}
+
+	w.centerModel = centerModel
+
+	if centerModel != nil {
+		w.disconnectCenterModel.AddSlot(centerModel.AddDataChangeListener(w.Refresh))
+		/*
+			var offsetBeforeRotate utils.Int2
+			w.disconnectCenterModel.AddSlot(centerModel.AddBeforeRotateListener(func() {
+				w.mutex.Lock()
+				offsetBeforeRotate = utils.NewInt2(int(w.offset.X), int(w.offset.Y))
+				w.mutex.Unlock()
+
+				offsetBeforeRotate.X += int(w.Size().Width / 2)
+				offsetBeforeRotate.Y += int(w.Size().Height / 2)
+
+				offsetBeforeRotate.X, offsetBeforeRotate.Y = w.rotateModel.TransformToRot(offsetBeforeRotate.X, offsetBeforeRotate.Y)
+			}))
+			w.disconnectRotateModel.AddSlot(rotateModel.AddAfterRotateListener(func() {
+				offsetBeforeRotate.X, offsetBeforeRotate.Y = w.rotateModel.TransformFromRot(offsetBeforeRotate.X, offsetBeforeRotate.Y)
+
+				w.mutex.Lock()
+				w.offset.X = float32(offsetBeforeRotate.X) - w.Size().Width/2.
+				w.offset.Y = float32(offsetBeforeRotate.Y) - w.Size().Height/2.
+				w.mutex.Unlock()
+			}))
+		*/
+	}
+
+	w.Refresh()
+}
+
 // mapX, mapY - координаты у w.getFloor(); imgX, imgY - координата у floor в mapX, mapY.
-func (w *MapWidget) screenPixelToFloorCoords(x, y uint, floorSize uint) (mapX, mapY int, imgX, imgY uint) {
+func (w *MapWidget) screenPixelToFloorCoords(x, y uint, floorSize uint, center utils.Int2) (mapX, mapY int, imgX, imgY uint) {
 	// Делим с округлением в меньшую сторону. Т.е.: `1 / 2 == 0` и `-1 / 2 == -1`
 	floorDiv := func(a int, b int) int {
 		res := a / b
@@ -702,8 +751,13 @@ func (w *MapWidget) screenPixelToFloorCoords(x, y uint, floorSize uint) (mapX, m
 		}
 		return res
 	}
-	mapX = floorDiv(int(x)+int(w.offset.X), int(floorSize))
-	mapY = floorDiv(int(y)+int(w.offset.Y), int(floorSize))
+
+	offset := center
+	offset.X -= int(w.Size().Width / 2)
+	offset.Y -= int(w.Size().Height / 2)
+
+	mapX = floorDiv(int(x)+int(offset.X), int(floorSize))
+	mapY = floorDiv(int(y)+int(offset.Y), int(floorSize))
 	// Если value < 0, то оно завернётся с другой стороны interval
 	wrapValue := func(value int, interval uint) uint {
 		v := value % int(interval)
@@ -712,14 +766,20 @@ func (w *MapWidget) screenPixelToFloorCoords(x, y uint, floorSize uint) (mapX, m
 		}
 		return uint(v)
 	}
-	imgX = (x + wrapValue(int(w.offset.X), floorSize)) % floorSize
-	imgY = (y + wrapValue(int(w.offset.Y), floorSize)) % floorSize
+	imgX = (x + wrapValue(int(offset.X), floorSize)) % floorSize
+	imgY = (y + wrapValue(int(offset.Y), floorSize)) % floorSize
+
 	return
 }
 
-func (w *MapWidget) floorCoordsToScreenPixel(mapX, mapY int, imgX, imgY uint, floorSize uint) (x, y int) {
-	x = mapX*int(floorSize) - int(w.offset.X) + int(imgX)
-	y = mapY*int(floorSize) - int(w.offset.Y) + int(imgY)
+func (w *MapWidget) floorCoordsToScreenPixel(mapX, mapY int, imgX, imgY uint, floorSize uint, center utils.Int2) (x, y int) {
+	offset := center
+	offset.X -= int(w.Size().Width / 2)
+	offset.Y -= int(w.Size().Height / 2)
+
+	x = mapX*int(floorSize) - offset.X + int(imgX)
+	y = mapY*int(floorSize) - offset.Y + int(imgY)
+
 	return
 }
 
@@ -756,13 +816,15 @@ func newMapWidgetRenderer(w *MapWidget) *mapWidgetRenderer {
 		scaledWallWidth := int(float32(w.imageConfig.WallWidth) * w.scale)
 		halfScaledWallWidth := int(float32(w.imageConfig.WallWidth) * w.scale / 2)
 
-		mapLeft, mapTop, _ /* imgX */, _ /* imgY */ := w.screenPixelToFloorCoords(uint(0), uint(0), uint(scaledFloorWbSize))
-		mapRight, mapBottom, _, _ := w.screenPixelToFloorCoords(uint(width), uint(height), uint(scaledFloorWbSize))
+		center := w.centerModel.Get()
+
+		mapLeft, mapTop, _ /* imgX */, _ /* imgY */ := w.screenPixelToFloorCoords(uint(0), uint(0), uint(scaledFloorWbSize), center)
+		mapRight, mapBottom, _, _ := w.screenPixelToFloorCoords(uint(width), uint(height), uint(scaledFloorWbSize), center)
 		mapRight++
 		mapBottom++
 
 		floorRect := func(x, y int) image.Rectangle {
-			pX, pY := w.floorCoordsToScreenPixel(x, y, 0, 0, uint(scaledFloorWbSize))
+			pX, pY := w.floorCoordsToScreenPixel(x, y, 0, 0, uint(scaledFloorWbSize), center)
 			return image.Rect(pX, pY, int(pX)+scaledFloorWobSize, int(pY)+scaledFloorWobSize)
 		}
 

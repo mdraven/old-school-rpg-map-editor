@@ -26,6 +26,10 @@ func NewUndoRedoQueue(maxElements int) *UndoRedoQueue {
 }
 
 func (q *UndoRedoQueue) AddAction(currentChangeGeneration uint64, action UndoRedoAction) (changeGeneration uint64, err error) {
+	if action == nil {
+		panic("action == nil")
+	}
+
 	if currentChangeGeneration > 0 {
 		index := slices.IndexFunc(q.actions, func(e UndoRedoElement) bool {
 			return e.ChangeGeneration == currentChangeGeneration
@@ -50,8 +54,8 @@ func (q *UndoRedoQueue) AddAction(currentChangeGeneration uint64, action UndoRed
 	// Удаляем UndoRedoContainer которые пустые. Не удаляем последний UndoRedoContainer, так как
 	// в него могли ещё ничего не положить
 	newActions := pie.Filter(q.actions[:len(q.actions)-1], func(a UndoRedoElement) bool {
-		if container, ok := a.Action.(*UndoRedoContainer); ok {
-			return len(container.actions) > 0
+		if container, ok := a.Action.(UndoRedoActionContainer); ok {
+			return container.Len() > 0
 		}
 		return true
 	})

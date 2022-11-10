@@ -97,6 +97,9 @@ func NewNotesModel(fontSize float64, font *truetype.Font) *NotesModel {
 }
 
 func (m *NotesModel) MarshalJSON() ([]byte, error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
 	t := struct {
 		Text string `json:"text"`
 	}{Text: m.text}
